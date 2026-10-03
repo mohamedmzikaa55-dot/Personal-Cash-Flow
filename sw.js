@@ -1,5 +1,5 @@
 ﻿// Personal Cash Flow - offline shell.
-const VERSION = 'pcf-v2'
+const VERSION = 'pcf-v3'
 const CORE = [
   './',
   './index.html',
@@ -14,8 +14,13 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(VERSION)
       .then((cache) => Promise.allSettled(CORE.map((url) => cache.add(new Request(url, { cache: 'reload' })))))
-      .then(() => self.skipWaiting())
+      .then(() => {})
   )
+})
+
+// The app asks us to activate after it has exported the auto-backup.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {

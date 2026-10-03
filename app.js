@@ -357,7 +357,10 @@ function renderWallets() {
         <p class="kicker">Accounts</p>
         <h1>Wallets</h1>
       </div>
-      <span class="pill">${money(total)}</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="pill">${money(total)}</span>
+        <button class="ghost-btn compact" data-action="new-wallet">+ Add wallet</button>
+      </div>
     </div>
     <div class="list">
       ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : '<div class="empty">No wallets yet. Tap + to add one.</div>'}
@@ -559,6 +562,10 @@ function renderMore() {
       <div class="section-head"><h2>Data</h2></div>
       <div class="list">
         <div class="budget-row">
+          <div class="top"><b>App status</b></div>
+          <p class="muted tight">Works fully offline · updates automatically when online · an automatic data backup is exported before every update.</p>
+        </div>
+        <div class="budget-row">
           <div class="top"><b>Import from CSV</b></div>
           <p class="muted tight">Bring in your Notion exports: Wallets, Income, Expense, Transfer, Budget or Debt CSV. The type is detected automatically.</p>
           <button class="ghost-btn" data-action="import-csv">Choose CSV file</button>
@@ -567,11 +574,12 @@ function renderMore() {
         <div class="budget-row">
           <div class="top"><b>Backup</b></div>
           <p class="muted tight">${report.wallets} wallets · ${report.incomes} income · ${report.expenses} expenses · ${report.transfers} transfers</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="ghost-btn" data-action="export-backup">Export backup</button>
-            <button class="ghost-btn" data-action="import-backup">Restore backup</button>
-            <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
-          </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+             <button class="ghost-btn" data-action="export-backup">Export backup</button>
+             <button class="ghost-btn" data-action="export-backup-pick">Export to location…</button>
+             <button class="ghost-btn" data-action="import-backup">Restore backup</button>
+             <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
+           </div>
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
         </div>
         <div class="budget-row">
@@ -604,6 +612,7 @@ function renderModal() {
             <button class="ghost-btn" data-action="open-income">＋ Income — money in</button>
             <button class="ghost-btn" data-action="open-expense">－ Expense — money out</button>
             <button class="ghost-btn" data-action="open-transfer">⇄ Transfer — move between wallets</button>
+            <button class="ghost-btn" data-action="open-wallet-new">▣ Wallet — add an account</button>
             <button class="ghost-btn" type="button" data-action="close-modal">Cancel</button>
           </div>
         </div>
@@ -847,6 +856,7 @@ document.addEventListener('click', (event) => {
   if (action === 'open-expense') { openModal('expense', {}, fromChoose); return }
   if (action === 'open-transfer') { openModal('transfer', {}, fromChoose); return }
   if (action === 'open-choose') { openModal('choose', null); return }
+  if (action === 'open-wallet-new') { openModal('wallet', {}, fromChoose); return }
 
   if (action === 'edit-transaction') {
     const kind = actionEl.dataset.kind
@@ -901,14 +911,12 @@ document.addEventListener('click', (event) => {
 
   if (action === 'import-csv') { const i = document.getElementById('csv-input'); if (i) i.click(); return }
   if (action === 'export-backup') {
-    const blob = new Blob([store.exportBackup()], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `personal-cash-flow-backup-${store.todayISO()}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 500)
+    downloadBackup(`personal-cash-flow-backup-${store.todayISO()}.json`)
     toast('Backup exported')
+    return
+  }
+  if (action === 'export-backup-pick') {
+    pickBackupLocation()
     return
   }
   if (action === 'import-backup') { const i = document.getElementById('backup-input'); if (i) i.click(); return }
@@ -1024,6 +1032,37 @@ document.addEventListener('change', (event) => {
   }
 })
 
+function downloadBackup(filename) {
+  const blob = new Blob([store.exportBackup()], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
+async function pickBackupLocation() {
+  const filename = `personal-cash-flow-backup-${store.todayISO()}.json`
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: 'Cash Flow backup (JSON)', accept: { 'application/json': ['.json'] } }]
+      })
+      const writable = await handle.createWritable()
+      await writable.write(new Blob([store.exportBackup()], { type: 'application/json' }))
+      await writable.close()
+      toast('Backup exported')
+      return
+    } catch (err) {
+      if (err && err.name === 'AbortError') return
+    }
+  }
+  downloadBackup(filename)
+  toast('Backup exported')
+}
+
 // ---------- boot ----------
 
 applyTheme()
@@ -1031,8 +1070,36 @@ render()
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {})
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      if (reg.waiting) {
+        if (navigator.serviceWorker.controller) applyUpdate(reg.waiting)
+        else { try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }) } catch {} }
+      }
+      reg.addEventListener('updatefound', () => {
+        const worker = reg.installing
+        if (!worker) return
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) applyUpdate(worker)
+        })
+      })
+    }).catch(() => {})
+
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return
+      refreshing = true
+      window.location.reload()
+    })
   })
+}
+
+// Export a safety backup, then let the waiting service worker take over.
+function applyUpdate(worker) {
+  try {
+    downloadBackup(`personal-cash-flow-autobackup-${store.todayISO()}.json`)
+    toast('Backup exported before update')
+  } catch {}
+  try { worker.postMessage({ type: 'SKIP_WAITING' }) } catch {}
 }
 
 const bootError = document.getElementById('boot-error')

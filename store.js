@@ -5,7 +5,7 @@ const STORAGE_KEY = 'personal-cash-flow-v1'
 
 export const WALLET_TYPES = ['In Hand', 'Digital Wallet', 'Safe']
 export const WALLET_STATUS = ['Available', 'Freezed']
-export const WALLET_CURRENCY = ['', '$', 'E£', '€', 'SAR', 'AED']
+export const WALLET_CURRENCY = ['', '$', 'E£', 'EGP', '€', 'SAR', 'AED']
 
 const PALETTE = [
   '#5b8cff', '#a06bff', '#22b07d', '#e8a51c', '#14b8a6',
