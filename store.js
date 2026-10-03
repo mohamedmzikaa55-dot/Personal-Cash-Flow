@@ -879,6 +879,34 @@ export const store = {
   totalCash() {
     return state.wallets.reduce((sum, w) => sum + walletBalance(w.id), 0)
   },
+  // Last `count` months ending with the current month (oldest first).
+  monthlyTrend(count = 6) {
+    const out = []
+    const now = new Date()
+    for (let i = count - 1; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const income = state.incomes.filter((r) => monthKey(r.date) === key).reduce((s, r) => s + r.amount, 0)
+      const expense = state.expenses.filter((r) => monthKey(r.date) === key).reduce((s, r) => s + r.amount, 0)
+      out.push({ month: key, label: d.toLocaleDateString(undefined, { month: 'short' }), income, expense, net: income - expense })
+    }
+    return out
+  },
+  // Everything that touched a wallet: incomes, expenses and both sides of a
+  // transfer, with transfers tagged in/out relative to this wallet.
+  walletTransactions(id) {
+    const rows = []
+    state.incomes.forEach((r) => {
+      if (r.walletId === id) rows.push({ ...r, kind: 'income' })
+    })
+    state.expenses.forEach((r) => {
+      if (r.walletId === id) rows.push({ ...r, kind: 'expense' })
+    })
+    state.transfers.forEach((t) => {
+      if (t.fromId === id || t.toId === id) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out' })
+    })
+    return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  },
 
   // Formatting
   formatMoney,

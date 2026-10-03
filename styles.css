@@ -16,8 +16,12 @@
   --blue-soft: rgba(110, 168, 255, 0.15);
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
   --radius: 20px;
+  --shell: 560px;
+  --tabbar-bg: rgba(11, 18, 32, 0.9);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 :root[data-theme='light'] {
@@ -29,6 +33,7 @@
   --text: #111a2e;
   --muted: #67748d;
   --shadow: 0 18px 40px rgba(20, 28, 50, 0.12);
+  --tabbar-bg: rgba(242, 244, 249, 0.92);
 }
 
 * {
@@ -40,9 +45,17 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: Outfit, system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+body.modal-open {
+  overflow: hidden;
 }
 
 button,
@@ -55,17 +68,20 @@ select {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 #app {
+  min-height: 100vh;
   min-height: 100dvh;
 }
 
 .app-shell {
-  max-width: 520px;
+  max-width: var(--shell);
   margin: 0 auto;
+  min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(18px + var(--safe-top)) 16px calc(112px + var(--safe-bottom));
+  padding: calc(18px + var(--safe-top)) calc(16px + var(--safe-right)) calc(112px + var(--safe-bottom)) calc(16px + var(--safe-left));
   background:
     radial-gradient(1100px 420px at 85% -8%, rgba(244, 185, 66, 0.10), transparent 55%),
     radial-gradient(760px 340px at -15% 12%, rgba(61, 220, 132, 0.09), transparent 50%),
@@ -206,13 +222,24 @@ h2 {
 }
 
 .icon-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   background: var(--card-2);
   color: var(--text);
   font-size: 20px;
   display: grid;
   place-items: center;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.item-meta {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .chip {
@@ -253,9 +280,10 @@ h2 {
 
 .hero .value {
   font-family: Fraunces, Georgia, serif;
-  font-size: 38px;
+  font-size: clamp(28px, 9vw, 38px);
   line-height: 1.1;
   margin: 4px 0 2px;
+  overflow-wrap: anywhere;
 }
 
 .hero .sub {
@@ -443,8 +471,8 @@ h2 {
 
 .fab {
   position: fixed;
-  right: max(18px, calc(50% - 260px + 18px));
-  bottom: calc(86px + var(--safe-bottom));
+  right: max(calc(18px + var(--safe-right)), calc(50% - (var(--shell) / 2) + 18px));
+  bottom: calc(88px + var(--safe-bottom));
   width: 58px;
   height: 58px;
   border-radius: 20px;
@@ -464,9 +492,10 @@ h2 {
   display: flex;
   justify-content: center;
   gap: 2px;
-  padding: 8px 8px calc(8px + var(--safe-bottom));
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  padding: 8px calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left));
+  background: var(--tabbar-bg);
   backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-top: 1px solid var(--line);
   z-index: 25;
 }
@@ -505,13 +534,29 @@ h2 {
 }
 
 .sheet {
-  width: min(520px, 100%);
+  width: min(var(--shell), 100%);
+  max-height: 90vh;
   max-height: 90dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--card);
   border-radius: 26px 26px 0 0;
-  padding: 18px 16px calc(22px + var(--safe-bottom));
+  padding: 18px calc(16px + var(--safe-right)) calc(22px + var(--safe-bottom)) calc(16px + var(--safe-left));
   box-shadow: var(--shadow);
+}
+
+/* Desktop / tablet: a centred dialog instead of a phone bottom-sheet. */
+@media (min-width: 640px) {
+  .modal-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+  .sheet {
+    border-radius: 26px;
+    max-height: 86vh;
+    max-height: 86dvh;
+  }
 }
 
 .sheet .handle {
@@ -548,8 +593,36 @@ select {
   border-radius: 13px;
   padding: 11px 13px;
   color: var(--text);
-  font-size: 15px;
+  /* 16px stops iOS Safari from zooming the page when a field is focused. */
+  font-size: 16px;
   width: 100%;
+  min-height: 46px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 21px, calc(100% - 13px) 21px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+input[type='color'] {
+  padding: 4px;
+}
+
+input[type='checkbox'] {
+  width: auto;
+  min-height: 0;
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  accent-color: var(--gold);
+}
+
+input[type='date'] {
+  min-height: 46px;
 }
 
 textarea {
@@ -714,5 +787,31 @@ select:focus {
 @media (max-width: 380px) {
   .stat-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .tab span {
+    font-size: 10px;
+  }
+}
+
+/* Pointer feedback only where a real pointer exists (avoids sticky :hover on
+   touch devices). */
+@media (hover: hover) and (pointer: fine) {
+  .item:hover,
+  .budget-row:hover {
+    border-color: rgba(244, 185, 66, 0.4);
+  }
+  .primary-btn:hover {
+    filter: brightness(1.05);
+  }
+  .ghost-btn:hover,
+  .mini-btn:hover {
+    background: var(--card);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

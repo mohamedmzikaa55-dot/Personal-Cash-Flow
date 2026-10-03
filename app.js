@@ -5,8 +5,73 @@ const app = document.getElementById('app')
 let screen = 'home'
 let modal = null
 let modalPayload = null
+let walletDetail = null
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
+
+// ---------- overlay history ----------
+// Every modal / drill-down pushes a history entry so the Android back button,
+// the iOS edge-swipe and the browser Back all dismiss it instead of leaving
+// the app (or, on Android, closing it outright).
+let pushedOverlays = 0
+let suppressPop = false
+
+function pushOverlay() {
+  try {
+    history.pushState({ pcf: 'overlay' }, '')
+    pushedOverlays += 1
+  } catch {}
+}
+
+function openModal(name, payload, replace) {
+  if (!replace) pushOverlay()
+  modal = name
+  modalPayload = payload || null
+  render()
+}
+
+function openWalletDetail(id) {
+  walletDetail = id
+  screen = 'wallets'
+  pushOverlay()
+  render()
+}
+
+// Close exactly one overlay layer (the modal on top, else the drill-down).
+function closeTopOverlay() {
+  if (modal) {
+    modal = null
+    modalPayload = null
+    return true
+  }
+  if (walletDetail) {
+    walletDetail = null
+    return true
+  }
+  return false
+}
+
+function goBack() {
+  if (!closeTopOverlay()) return
+  if (pushedOverlays > 0) {
+    pushedOverlays -= 1
+    suppressPop = true
+    try { history.back() } catch { suppressPop = false }
+  }
+  render()
+}
+
+window.addEventListener('popstate', () => {
+  // A pop we triggered ourselves from goBack() — already handled.
+  if (suppressPop) {
+    suppressPop = false
+    return
+  }
+  if (closeTopOverlay()) {
+    pushedOverlays = Math.max(0, pushedOverlays - 1)
+    render()
+  }
+})
 
 // ---------- tiny helpers ----------
 
@@ -118,6 +183,8 @@ function renderDashboard() {
       <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}</p>
     </section>
 
+    ${renderTrend()}
+
     <section class="section">
       <div class="section-head">
         <h2>Wallets</h2>
@@ -152,7 +219,7 @@ function walletAvatar(wallet) {
 
 function walletRow(wallet) {
   return `
-    <article class="item" data-action="edit-wallet" data-id="${wallet.id}">
+    <article class="item" data-action="open-wallet" data-id="${wallet.id}">
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
@@ -160,6 +227,33 @@ function walletRow(wallet) {
       </div>
       <div class="amount ${wallet.current < 0 ? 'neg' : ''} mono">${money(wallet.current)}</div>
     </article>
+  `
+}
+
+function renderTrend() {
+  const data = store.monthlyTrend(6)
+  const max = Math.max(1, ...data.map((d) => Math.max(d.income, d.expense)))
+  return `
+    <section class="section">
+      <div class="section-head"><h2>Cash flow</h2><span class="item-meta">${data.length} months</span></div>
+      <div class="card">
+        <div class="chart">
+          ${data.map((d) => `
+            <div class="chart-col" title="${escapeHtml(store.monthLabel(d.month))}: +${money(d.income)} / -${money(d.expense)}">
+              <div class="chart-bars">
+                <i style="height:${Math.max(3, Math.round((d.income / max) * 100))}%;background:var(--green)"></i>
+                <i style="height:${Math.max(3, Math.round((d.expense / max) * 100))}%;background:var(--red)"></i>
+              </div>
+              <span class="chart-x">${escapeHtml(d.label)}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--green)"></i>Income ${money(data.reduce((s, d) => s + d.income, 0))}</span>
+          <span><i style="background:var(--red)"></i>Expense ${money(data.reduce((s, d) => s + d.expense, 0))}</span>
+        </div>
+      </div>
+    </section>
   `
 }
 
@@ -275,7 +369,7 @@ function walletDetailRow(wallet) {
   const income = store.getIncomes().filter((r) => r.walletId === wallet.id).reduce((s, r) => s + r.amount, 0)
   const expense = store.getExpenses().filter((r) => r.walletId === wallet.id).reduce((s, r) => s + r.amount, 0)
   return `
-    <article class="item" style="align-items:start">
+    <article class="item" style="align-items:start" data-action="open-wallet" data-id="${wallet.id}">
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
@@ -284,12 +378,61 @@ function walletDetailRow(wallet) {
       </div>
       <div style="display:grid;gap:8px;justify-items:end">
         <div class="amount ${wallet.current < 0 ? 'neg' : ''} mono">${money(wallet.current)}</div>
-        <div style="display:flex;gap:6px">
-          <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" title="Edit">${icon('edit')}</button>
-          <button class="mini-btn danger" data-action="delete-wallet" data-id="${wallet.id}" title="Delete">${icon('trash')}</button>
+        <div class="row-actions">
+          <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" title="Edit" aria-label="Edit wallet">${icon('edit')}</button>
+          <button class="mini-btn danger" data-action="delete-wallet" data-id="${wallet.id}" title="Delete" aria-label="Delete wallet">${icon('trash')}</button>
         </div>
       </div>
     </article>
+  `
+}
+
+function renderWalletDetail() {
+  const wallet = store.findWallet(walletDetail)
+  if (!wallet) {
+    walletDetail = null
+    return renderWallets()
+  }
+  const current = store.walletBalance(wallet.id)
+  const tx = store.walletTransactions(wallet.id)
+  const income = tx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
+  const expense = tx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
+  const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in').reduce((s, r) => s + r.amount, 0)
+  const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out').reduce((s, r) => s + r.amount + (r.fee || 0), 0)
+  return `
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="icon-btn" data-action="wallet-back" aria-label="Back">${icon('left')}</button>
+        <div>
+          <p class="kicker">${escapeHtml(wallet.type)}</p>
+          <h1 style="font-size:24px">${escapeHtml(wallet.name)}</h1>
+        </div>
+      </div>
+      <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" aria-label="Edit wallet">${icon('edit')}</button>
+    </div>
+
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <span class="label">Current balance</span>
+          <div class="value mono" style="font-size:34px">${money(current)}</div>
+          <div class="sub">Opening ${money(wallet.opening)}${wallet.currency ? ` · ${escapeHtml(wallet.currency)}` : ''}</div>
+        </div>
+        <span class="pill ${wallet.status === 'Freezed' ? 'neg' : 'pos'}">${wallet.status}</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
+        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
+        <div class="stat"><span class="muted">Transfers</span><b class="mono">${money(inflow - outflow)}</b></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Activity</h2><span class="item-meta">${tx.length} item${tx.length === 1 ? '' : 's'}</span></div>
+      <div class="list">
+        ${tx.length ? tx.map(txRow).join('') : '<div class="empty">No transactions for this wallet yet.</div>'}
+      </div>
+    </section>
   `
 }
 
@@ -612,16 +755,17 @@ function renderModal() {
 
 function render() {
   if (!app) return
+  const showFab = screen !== 'more' && !walletDetail
   app.innerHTML = `
     <div class="app-shell">
       <main>
         ${screen === 'home' ? renderDashboard() : ''}
         ${screen === 'activity' ? renderTransactions() : ''}
-        ${screen === 'wallets' ? renderWallets() : ''}
+        ${screen === 'wallets' ? (walletDetail ? renderWalletDetail() : renderWallets()) : ''}
         ${screen === 'budgets' ? renderBudgets() : ''}
         ${screen === 'more' ? renderMore() : ''}
       </main>
-      ${screen !== 'more' ? '<button class="fab" data-action="open-add" aria-label="Add">+</button>' : ''}
+      ${showFab ? '<button class="fab" data-action="open-add" aria-label="Add">+</button>' : ''}
       <nav class="tabbar">
         ${[
           ['home', 'Home', 'home'],
@@ -635,6 +779,7 @@ function render() {
     ${renderModal()}
     <div class="toast" id="toast"></div>
   `
+  document.body.classList.toggle('modal-open', Boolean(modal))
 }
 
 function toast(message) {
@@ -657,6 +802,7 @@ document.addEventListener('click', (event) => {
   const screenBtn = event.target.closest('[data-screen]')
   if (screenBtn) {
     screen = screenBtn.dataset.screen
+    if (screen !== 'wallets') walletDetail = null
     render()
     return
   }
@@ -666,13 +812,10 @@ document.addEventListener('click', (event) => {
   const action = actionEl.dataset.action
 
   if (action === 'close-modal') {
-    if (event.target.classList.contains('modal-backdrop') || actionEl.tagName === 'BUTTON') {
-      modal = null
-      modalPayload = null
-      render()
-    }
+    if (event.target.classList.contains('modal-backdrop') || actionEl.tagName === 'BUTTON') goBack()
     return
   }
+  if (action === 'wallet-back') { goBack(); return }
 
   if (action === 'month-prev') { shiftMonth(-1); render(); return }
   if (action === 'month-next') { shiftMonth(1); render(); return }
@@ -681,7 +824,8 @@ document.addEventListener('click', (event) => {
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
 
-  if (action === 'open-add') { modal = 'choose'; modalPayload = null; render(); return }
+  if (action === 'open-wallet') { openWalletDetail(actionEl.dataset.id); return }
+  if (action === 'open-add') { openModal('choose', null); return }
   const opens = {
     'new-wallet': 'wallet', 'edit-wallet': 'wallet',
     'new-category': 'category', 'edit-category': 'category',
@@ -692,40 +836,38 @@ document.addEventListener('click', (event) => {
   if (opens[action]) {
     const kind = opens[action]
     const id = actionEl.dataset.id
-    modal = kind
-    modalPayload = id ? (findRecord(kind, id) || {}) : {}
-    render()
+    openModal(kind, id ? (findRecord(kind, id) || {}) : {})
     return
   }
 
-  if (action === 'open-income') { modal = 'income'; modalPayload = {}; render(); return }
-  if (action === 'open-expense') { modal = 'expense'; modalPayload = {}; render(); return }
-  if (action === 'open-transfer') { modal = 'transfer'; modalPayload = {}; render(); return }
-  if (action === 'open-choose') { modal = 'choose'; render(); return }
+  // Choosing a type from the "+" sheet replaces the sheet, so it does not add
+  // a second history layer.
+  const fromChoose = modal === 'choose'
+  if (action === 'open-income') { openModal('income', {}, fromChoose); return }
+  if (action === 'open-expense') { openModal('expense', {}, fromChoose); return }
+  if (action === 'open-transfer') { openModal('transfer', {}, fromChoose); return }
+  if (action === 'open-choose') { openModal('choose', null); return }
 
   if (action === 'edit-transaction') {
     const kind = actionEl.dataset.kind
     const rec = store.findTransaction(kind, actionEl.dataset.id)
     if (!rec) return
-    modal = kind
-    modalPayload = { ...rec }
-    render()
+    openModal(kind, { ...rec })
     return
   }
   if (action === 'delete-category') {
     if (!window.confirm('Delete this category? Its expenses become uncategorised.')) return
     store.removeCategory(actionEl.dataset.id)
-    modal = null
-    modalPayload = null
     toast('Category deleted')
-    render()
+    goBack()
     return
   }
   if (action === 'delete-wallet') {
     if (!window.confirm('Delete this wallet? Transactions will keep pointing at it but show no name.')) return
     store.removeWallet(actionEl.dataset.id)
     toast('Wallet deleted')
-    render()
+    if (modal) goBack()
+    else { walletDetail = null; render() }
     return
   }
   if (action === 'delete-source') {
@@ -739,27 +881,21 @@ document.addEventListener('click', (event) => {
     if (!window.confirm('Delete this transaction?')) return
     store.removeTransaction(actionEl.dataset.kind, actionEl.dataset.id)
     toast('Deleted')
-    modal = null
-    modalPayload = null
-    render()
+    goBack()
     return
   }
   if (action === 'delete-asset') {
     if (!window.confirm('Delete this asset?')) return
     store.removeAsset(actionEl.dataset.id)
-    modal = null
-    modalPayload = null
     toast('Asset deleted')
-    render()
+    goBack()
     return
   }
   if (action === 'delete-debt') {
     if (!window.confirm('Delete this debt record?')) return
     store.removeDebt(actionEl.dataset.id)
-    modal = null
-    modalPayload = null
     toast('Debt deleted')
-    render()
+    goBack()
     return
   }
 
@@ -848,9 +984,8 @@ document.addEventListener('submit', (event) => {
     toast(id ? 'Debt updated' : 'Debt added')
   }
 
-  modal = null
-  modalPayload = null
-  render()
+  // Save closes the sheet and pops the overlay history entry.
+  goBack()
 })
 
 document.addEventListener('change', (event) => {
