@@ -1,0 +1,20 @@
+{
+  "name": "Personal Cash Flow",
+  "short_name": "Cash Flow",
+  "description": "Track wallets, income, expenses, budgets, assets and debts — fully offline.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "background_color": "#0B1220",
+  "theme_color": "#0B1220",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

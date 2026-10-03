@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Personal Cash Flow">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#132038"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD873"/>
+      <stop offset="1" stop-color="#F4B942"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5CF0A1"/>
+      <stop offset="1" stop-color="#3DDC84"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F4B942" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#F4B942" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3DDC84" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#3DDC84" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <rect width="128" height="128" fill="url(#bg)"/>
+  <ellipse cx="100" cy="18" rx="60" ry="46" fill="url(#glow)"/>
+  <ellipse cx="22" cy="114" rx="54" ry="42" fill="url(#glow2)"/>
+
+  <!-- Wallet body -->
+  <g filter="url(#soft)">
+    <rect x="26" y="38" width="76" height="54" rx="16" fill="url(#gold)"/>
+    <rect x="26" y="38" width="76" height="54" rx="16" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.5"/>
+    <rect x="26" y="52" width="76" height="9" fill="#000000" opacity="0.10"/>
+  </g>
+  <!-- Wallet flap / clasp -->
+  <rect x="26" y="64" width="44" height="18" rx="9" fill="#0B1220" opacity="0.22"/>
+  <circle cx="88" cy="73" r="7" fill="#0B1220" opacity="0.35"/>
+
+  <!-- Rising cash-flow arrow -->
+  <path d="M34 92 L52 76 L66 84 L92 52" fill="none" stroke="url(#green)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M78 52 h14 v14" fill="none" stroke="url(#green)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
