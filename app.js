@@ -6,6 +6,8 @@ let screen = 'home'
 let modal = null
 let modalPayload = null
 let walletDetail = null
+let deferredInstall = null
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; render() })
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
 
@@ -564,6 +566,7 @@ function renderMore() {
         <div class="budget-row">
           <div class="top"><b>App status</b></div>
           <p class="muted tight">Works fully offline · updates automatically when online · an automatic data backup is exported before every update.</p>
+          <button class="ghost-btn" data-action="install-app">${deferredInstall ? 'Install app' : 'Install app (browser menu)'}</button>
         </div>
         <div class="budget-row">
           <div class="top"><b>Import from CSV</b></div>
@@ -913,6 +916,15 @@ document.addEventListener('click', (event) => {
   if (action === 'export-backup') {
     downloadBackup(`personal-cash-flow-backup-${store.todayISO()}.json`)
     toast('Backup exported')
+    return
+  }
+  if (action === 'install-app') {
+    if (deferredInstall) {
+      deferredInstall.prompt()
+      deferredInstall.userChoice.then((r) => { deferredInstall = null; render() })
+    } else {
+      toast('Use your browser menu → Add to Home screen / Install app')
+    }
     return
   }
   if (action === 'export-backup-pick') {
