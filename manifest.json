@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "Personal Cash Flow",
   "short_name": "Cash Flow",
-  "description": "Track wallets, income, expenses, budgets, assets and debts — fully offline.",
+  "description": "Track wallets, income, expenses, budgets, assets and debts - fully offline.",
   "start_url": "./",
   "scope": "./",
   "id": "./",

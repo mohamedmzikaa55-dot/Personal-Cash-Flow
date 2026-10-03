@@ -340,9 +340,9 @@ function renderTransactions() {
 
 function monthNav() {
   return `
-    <div style="display:flex;align-items:center;gap:6px">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <button class="icon-btn" data-action="month-prev" aria-label="Previous month">${icon('left')}</button>
-      <button class="ghost-btn compact" data-action="month-now" style="min-width:120px">${escapeHtml(store.monthLabel(month))}</button>
+      <button class="ghost-btn compact" data-action="month-now" style="min-width:112px;flex:0 1 auto">${escapeHtml(store.monthLabel(month))}</button>
       <button class="icon-btn" data-action="month-next" aria-label="Next month">${icon('right')}</button>
     </div>
   `

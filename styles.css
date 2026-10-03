@@ -52,6 +52,7 @@ body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior-y: none;
+  overflow-x: hidden;
 }
 
 body.modal-open {
@@ -97,8 +98,13 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.topbar > div {
+  min-width: 0;
 }
 
 .kicker {
@@ -119,13 +125,14 @@ p {
 
 h1 {
   font-family: Fraunces, Georgia, serif;
-  font-size: 30px;
+  font-size: clamp(22px, 7vw, 30px);
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 h2 {
   font-family: Fraunces, Georgia, serif;
-  font-size: 21px;
+  font-size: clamp(18px, 5.4vw, 21px);
 }
 
 .muted {
@@ -322,7 +329,7 @@ h2 {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 16px;
 }
@@ -332,16 +339,18 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 12px;
+  min-width: 0;
+}
+
+.stat b {
+  font-size: clamp(13px, 4vw, 16px);
+  overflow-wrap: anywhere;
 }
 
 .stat .muted {
   font-size: 11px;
   display: block;
   margin-bottom: 4px;
-}
-
-.stat b {
-  font-size: 16px;
 }
 
 .stat b.pos {
@@ -385,7 +394,7 @@ h2 {
   border-radius: 18px;
   padding: 13px 14px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   gap: 12px;
   align-items: center;
 }
@@ -423,6 +432,9 @@ h2 {
   font-weight: 700;
   font-size: 15px;
   white-space: nowrap;
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .amount.pos {
@@ -639,8 +651,15 @@ select:focus {
 
 .row2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+label,
+.item .body,
+.budget-row .top,
+.chart-col {
+  min-width: 0;
 }
 
 .form-actions {
