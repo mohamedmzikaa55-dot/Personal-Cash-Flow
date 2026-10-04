@@ -581,6 +581,7 @@ function renderMore() {
              <button class="ghost-btn" data-action="export-backup">Export backup</button>
              <button class="ghost-btn" data-action="export-backup-pick">Export to location…</button>
              <button class="ghost-btn" data-action="import-backup">Restore backup</button>
+             <button class="ghost-btn" data-action="check-update">Check for update</button>
              <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
            </div>
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
@@ -591,6 +592,18 @@ function renderMore() {
             ${WALLET_CURRENCY.filter(Boolean).concat(['$', 'E£', '€']).filter((v, i, a) => a.indexOf(v) === i).map((c) =>
               `<button class="chip ${settings.currency === c ? 'on' : ''}" data-action="set-currency" data-value="${escapeHtml(c)}">${escapeHtml(c)}</button>`
             ).join('')}
+          </div>
+          <div class="row2" style="margin-top:10px">
+            <label>Main currency<select id="main-currency">
+              ${WALLET_CURRENCY.filter(Boolean).concat(['EGP', '$', '€', '£', 'SAR', 'AED']).filter((v, i, a) => a.indexOf(v) === i).map((c) => `<option value="${escapeHtml(c)}" ${settings.mainCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+            </select></label>
+            <label>Secondary currency<select id="secondary-currency">
+              ${WALLET_CURRENCY.filter(Boolean).concat(['$', 'EGP', '€', '£', 'SAR', 'AED']).filter((v, i, a) => a.indexOf(v) === i).map((c) => `<option value="${escapeHtml(c)}" ${settings.secondaryCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+            </select></label>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <p class="muted tight" style="margin:0">${escapeHtml(settings.secondaryCurrency)} = ${settings.exchangeRate ? escapeHtml(String(settings.exchangeRate)) : '…'} ${escapeHtml(settings.mainCurrency)}${settings.rateUpdatedAt ? ` · updated ${escapeHtml(store.formatDate(String(settings.rateUpdatedAt).slice(0, 10)))}` : ''}</p>
+            <button class="ghost-btn compact" data-action="refresh-rate">Update rate</button>
           </div>
         </div>
       </div>
@@ -638,7 +651,10 @@ function renderModal() {
       </div>
       <div class="row2">
         <label>Opening balance<input name="opening" type="number" step="0.01" value="${Number(w.opening) || 0}" /></label>
-        <label>Foreign currency (opt.)<input name="currency" maxlength="12" value="${escapeHtml(w.currency || '')}" placeholder="€1.60" /></label>
+        <label>Foreign currency (opt.)<select name="currency">
+          ${WALLET_CURRENCY.map((c) => `<option value="${escapeHtml(c)}" ${c === (w.currency || '') ? 'selected' : ''}>${c || '— None —'}</option>`).join('')}
+          ${w.currency && !WALLET_CURRENCY.includes(w.currency) ? `<option value="${escapeHtml(w.currency)}" selected>${escapeHtml(w.currency)}</option>` : ''}
+        </select></label>
       </div>
     `
   } else if (modal === 'category') {
@@ -882,6 +898,21 @@ document.addEventListener('click', (event) => {
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
+  if (action === 'refresh-rate') {
+    store.refreshRate().then((res) => { toast(res.ok ? 'Rate updated' : (res.reason || 'Could not update')); render() })
+    return
+  }
+  if (action === 'check-update') {
+    if (!swReg) { toast('Updates not supported here'); return }
+    toast('Checking for updates…')
+    swReg.update().then(() => {
+      setTimeout(() => {
+        if (swReg.waiting) applyUpdate(swReg.waiting)
+        else toast('App is up to date')
+      }, 1500)
+    }).catch(() => toast('Could not check for updates'))
+    return
+  }
 
   if (action === 'open-wallet') { openWalletDetail(actionEl.dataset.id); return }
   if (action === 'open-add') { openModal('choose', null); return }
@@ -1057,6 +1088,16 @@ document.addEventListener('submit', (event) => {
 
 document.addEventListener('change', (event) => {
   const el = event.target
+  if (el && el.id === 'main-currency') {
+    store.setMainCurrency(el.value)
+    store.refreshRate().then((res) => { if (res.ok) toast('Rate updated'); render() })
+    return
+  }
+  if (el && el.id === 'secondary-currency') {
+    store.setSecondaryCurrency(el.value)
+    store.refreshRate().then((res) => { if (res.ok) toast('Rate updated'); render() })
+    return
+  }
   if (el && el.matches && el.matches('select[data-repeat]')) {
     syncRepeatPanels(el.value)
     return
@@ -1131,18 +1172,26 @@ async function pickBackupLocation() {
 applyTheme()
 render()
 
+;(function autoRate() {
+  const s = store.getSettings()
+  const stale = !s.rateUpdatedAt || Date.now() - new Date(s.rateUpdatedAt).getTime() > 12 * 60 * 60 * 1000
+  if (!stale) return
+  store.refreshRate().then((res) => { if (res.ok) render() })
+})()
+
+let swReg = null
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').then((reg) => {
-      if (reg.waiting) {
-        if (navigator.serviceWorker.controller) applyUpdate(reg.waiting)
-        else { try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }) } catch {} }
-      }
+      swReg = reg
+      if (reg.waiting) toast('Update ready — tap Check for update in Settings')
       reg.addEventListener('updatefound', () => {
         const worker = reg.installing
         if (!worker) return
         worker.addEventListener('statechange', () => {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) applyUpdate(worker)
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            toast('Update available — tap Check for update in Settings')
+          }
         })
       })
     }).catch(() => {})

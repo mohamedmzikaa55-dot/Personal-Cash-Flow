@@ -277,7 +277,7 @@ function normalizeDebt(debt) {
 function defaultState() {
   return {
     version: 1,
-    settings: { currency: '$', theme: 'dark' },
+    settings: { currency: '$', theme: 'dark', mainCurrency: 'EGP', secondaryCurrency: '$', exchangeRate: null, rateUpdatedAt: '' },
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
     sources: DEFAULT_SOURCES.map((name) => normalizeSource({ name })),
@@ -294,7 +294,11 @@ function migrate(raw) {
   const out = defaultState()
   out.settings = {
     currency: str(raw.settings && raw.settings.currency, 6) || '$',
-    theme: raw.settings && raw.settings.theme === 'light' ? 'light' : 'dark'
+    theme: raw.settings && raw.settings.theme === 'light' ? 'light' : 'dark',
+    mainCurrency: str(raw.settings && raw.settings.mainCurrency, 12) || 'EGP',
+    secondaryCurrency: str(raw.settings && raw.settings.secondaryCurrency, 12) || '$',
+    exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
+    rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40)
   }
   if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
   if (Array.isArray(raw.categories) && raw.categories.length) out.categories = raw.categories.map(normalizeCategory)
@@ -709,6 +713,7 @@ export function importCSVText(text) {
 
 export const store = {
   todayISO,
+  nowTime,
   monthKey,
   monthLabel,
   parseMoney,
@@ -722,6 +727,39 @@ export const store = {
   setCurrency(value) {
     state.settings.currency = str(value, 6) || '$'
     save()
+  },
+  setMainCurrency(value) {
+    state.settings.mainCurrency = str(value, 12) || 'EGP'
+    save()
+  },
+  setSecondaryCurrency(value) {
+    state.settings.secondaryCurrency = str(value, 12) || '$'
+    save()
+  },
+  async refreshRate() {
+    const toCode = (v) => {
+      const s = String(v || '').trim()
+      if (s === '$') return 'USD'
+      if (s === '€') return 'EUR'
+      if (s === '£') return 'GBP'
+      if (s === 'E£' || s.toUpperCase() === 'EGP') return 'EGP'
+      return s.replace(/[^A-Za-z]/g, '').toUpperCase() || 'USD'
+    }
+    const from = toCode(state.settings.secondaryCurrency)
+    const to = toCode(state.settings.mainCurrency)
+    try {
+      const res = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(from)}`)
+      const data = await res.json()
+      if (data && data.result === 'success' && data.rates && data.rates[to]) {
+        state.settings.exchangeRate = Math.round(Number(data.rates[to]) * 100) / 100
+        state.settings.rateUpdatedAt = new Date().toISOString()
+        save()
+        return { ok: true, rate: state.settings.exchangeRate }
+      }
+      return { ok: false, reason: 'Rate not available' }
+    } catch {
+      return { ok: false, reason: 'Offline' }
+    }
   },
   getTheme() {
     return state.settings.theme
