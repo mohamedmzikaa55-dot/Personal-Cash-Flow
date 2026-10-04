@@ -282,17 +282,17 @@ function txRow(tx) {
   if (tx.kind === 'income') {
     avatar = `<span class="avatar" style="background:var(--green)">${icon('up')}</span>`
     title = escapeHtml(tx.name)
-    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}`
+    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount pos mono">+${money(tx.amount)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar" style="background:var(--red)">${icon('down')}</span>`
     title = escapeHtml(tx.name)
-    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}`
+    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount neg mono">-${money(tx.amount)}</div>`
   } else {
     avatar = `<span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>`
     title = 'Transfer'
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount mono">${money(tx.amount)}</div>`
   }
   return `
@@ -665,6 +665,25 @@ function renderModal() {
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
       <div class="row2">
+        <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
+        <label>Repeat<select name="repeat" data-repeat>
+          <option value="none" ${!r.repeat || r.repeat === 'none' ? 'selected' : ''}>One time</option>
+          <option value="weekly" ${r.repeat === 'weekly' ? 'selected' : ''}>Every week</option>
+          <option value="monthly" ${r.repeat === 'monthly' ? 'selected' : ''}>Every month</option>
+          <option value="custom" ${r.repeat === 'custom' ? 'selected' : ''}>Custom (every N days)</option>
+        </select></label>
+      </div>
+      <div data-repeat-panel="weekly" style="display:none">
+        <div class="muted tight" style="margin-bottom:4px">On these days:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" style="width:auto" /> ${d}</label>`).join('')}</div>
+      </div>
+      <div data-repeat-panel="monthly" style="display:none">
+        <label>Day of month<input name="monthDay" type="number" min="1" max="31" value="${r.monthDay || ''}" placeholder="Same as start date" /></label>
+      </div>
+      <div data-repeat-panel="custom" style="display:none">
+        <label>Every how many days<input name="customDays" type="number" min="1" max="365" value="${r.customDays || 7}" /></label>
+      </div>
+      <div class="row2">
         <label>Wallet${walletSelect(r.walletId, 'walletId')}</label>
         <label>Source${optionSelect(store.getSources(), r.sourceId, 'sourceId')}</label>
       </div>
@@ -678,6 +697,25 @@ function renderModal() {
       <div class="row2">
         <label>Amount<input name="amount" type="number" step="0.01" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" /></label>
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
+      </div>
+      <div class="row2">
+        <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
+        <label>Repeat<select name="repeat" data-repeat>
+          <option value="none" ${!r.repeat || r.repeat === 'none' ? 'selected' : ''}>One time</option>
+          <option value="weekly" ${r.repeat === 'weekly' ? 'selected' : ''}>Every week</option>
+          <option value="monthly" ${r.repeat === 'monthly' ? 'selected' : ''}>Every month</option>
+          <option value="custom" ${r.repeat === 'custom' ? 'selected' : ''}>Custom (every N days)</option>
+        </select></label>
+      </div>
+      <div data-repeat-panel="weekly" style="display:none">
+        <div class="muted tight" style="margin-bottom:4px">On these days:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" style="width:auto" /> ${d}</label>`).join('')}</div>
+      </div>
+      <div data-repeat-panel="monthly" style="display:none">
+        <label>Day of month<input name="monthDay" type="number" min="1" max="31" value="${r.monthDay || ''}" placeholder="Same as start date" /></label>
+      </div>
+      <div data-repeat-panel="custom" style="display:none">
+        <label>Every how many days<input name="customDays" type="number" min="1" max="365" value="${r.customDays || 7}" /></label>
       </div>
       <div class="row2">
         <label>Wallet${walletSelect(r.walletId, 'walletId')}</label>
@@ -792,6 +830,15 @@ function render() {
     <div class="toast" id="toast"></div>
   `
   document.body.classList.toggle('modal-open', Boolean(modal))
+  const repeatSel = document.querySelector('select[data-repeat]')
+  if (repeatSel) syncRepeatPanels(repeatSel.value)
+}
+
+function syncRepeatPanels(value) {
+  ;['weekly', 'monthly', 'custom'].forEach((name) => {
+    const p = document.querySelector(`[data-repeat-panel="${name}"]`)
+    if (p) p.style.display = value === name ? '' : 'none'
+  })
 }
 
 function toast(message) {
@@ -970,13 +1017,13 @@ document.addEventListener('submit', (event) => {
     else store.addSource(fields)
     toast(id ? 'Source updated' : 'Source added')
   } else if (type === 'income') {
-    const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note') }
+    const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateTransaction('income', id, fields)
     else store.addIncome(fields)
     toast(id ? 'Income updated' : 'Income added')
   } else if (type === 'expense') {
-    const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note') }
+    const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateTransaction('expense', id, fields)
     else store.addExpense(fields)
@@ -1010,6 +1057,10 @@ document.addEventListener('submit', (event) => {
 
 document.addEventListener('change', (event) => {
   const el = event.target
+  if (el && el.matches && el.matches('select[data-repeat]')) {
+    syncRepeatPanels(el.value)
+    return
+  }
   if (el && el.id === 'csv-input') {
     const file = el.files && el.files[0]
     if (!file) return

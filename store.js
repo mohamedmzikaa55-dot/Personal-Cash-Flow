@@ -85,10 +85,11 @@ function str(value, max) {
 }
 
 export function todayISO(date = new Date()) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+export function nowTime(date = new Date()) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 export function monthKey(dateISO) {
@@ -178,10 +179,47 @@ function baseRecord(rec) {
     name: str(rec.name, 120) || 'Entry',
     amount: Math.abs(parseMoney(rec.amount)),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     walletId: str(rec.walletId, 60),
     note: str(rec.note, 400),
     createdAt: rec.createdAt || new Date().toISOString()
   }
+}
+
+function recurringDates(fields) {
+  const start = isValidISO(fields.date) ? String(fields.date) : todayISO()
+  const repeat = String(fields.repeat || 'none')
+  if (repeat === 'none') return [start]
+  const out = []
+  const begin = new Date(`${start}T00:00:00`)
+  const limit = new Date(begin)
+  limit.setFullYear(limit.getFullYear() + 1)
+  if (repeat === 'weekly') {
+    let days = Array.isArray(fields.weekDays) ? fields.weekDays.map(Number).filter((d) => d >= 0 && d <= 6) : []
+    if (!days.length) days = [begin.getDay()]
+    for (let d = new Date(begin); d <= limit && out.length < 104; d.setDate(d.getDate() + 1)) {
+      if (days.includes(d.getDay())) out.push(todayISO(d))
+    }
+    return out.length ? out : [start]
+  }
+  if (repeat === 'monthly') {
+    const dayOfMonth = Math.min(31, Math.max(1, Number(fields.monthDay) || begin.getDate()))
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(begin.getFullYear(), begin.getMonth() + i, dayOfMonth)
+      if (d < begin) continue
+      if (d.getMonth() !== (begin.getMonth() + i) % 12) continue
+      out.push(todayISO(d))
+    }
+    return out.length ? out : [start]
+  }
+  if (repeat === 'custom') {
+    const step = Math.max(1, Math.min(365, Math.round(Number(fields.customDays) || 0)) || 7)
+    for (let d = new Date(begin); d <= limit && out.length < 52; d.setDate(d.getDate() + step)) {
+      out.push(todayISO(d))
+    }
+    return out.length ? out : [start]
+  }
+  return [start]
 }
 
 function normalizeIncome(rec) {
@@ -200,6 +238,7 @@ function normalizeTransfer(rec) {
     fromId: str(rec.fromId, 60),
     toId: str(rec.toId, 60),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     note: str(rec.note, 400),
     createdAt: rec.createdAt || new Date().toISOString()
   }
@@ -792,16 +831,18 @@ export const store = {
     return null
   },
   addIncome(fields) {
-    const rec = normalizeIncome({ ...fields, name: fields.name || sourceName(fields.sourceId) || 'Income' })
-    state.incomes.push(rec)
+    const dates = recurringDates(fields)
+    const made = dates.map((date) => normalizeIncome({ ...fields, date, name: fields.name || sourceName(fields.sourceId) || 'Income' }))
+    state.incomes.push(...made)
     save()
-    return rec
+    return made[0]
   },
   addExpense(fields) {
-    const rec = normalizeExpense({ ...fields, name: fields.name || categoryName(fields.categoryId) || 'Expense' })
-    state.expenses.push(rec)
+    const dates = recurringDates(fields)
+    const made = dates.map((date) => normalizeExpense({ ...fields, date, name: fields.name || categoryName(fields.categoryId) || 'Expense' }))
+    state.expenses.push(...made)
     save()
-    return rec
+    return made[0]
   },
   addTransfer(fields) {
     const rec = normalizeTransfer(fields)
