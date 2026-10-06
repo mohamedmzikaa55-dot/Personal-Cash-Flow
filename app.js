@@ -10,6 +10,7 @@ let deferredInstall = null
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; render() })
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
+let dueRefreshTimer = null
 
 // ---------- overlay history ----------
 // Every modal / drill-down pushes a history entry so the Android back button,
@@ -87,6 +88,47 @@ function escapeHtml(value) {
 
 function money(value, withSign) {
   return store.formatMoney(value, withSign)
+}
+
+function repeatLabel(repeat) {
+  if (repeat === 'weekly') return 'Every week'
+  if (repeat === 'monthly') return 'Every month'
+  if (repeat === 'custom') return 'Custom schedule'
+  return 'Scheduled series'
+}
+
+function repeatingScheduleRow(schedule) {
+  const { kind, next, upcoming, repeat } = schedule
+  const isIncome = kind === 'income'
+  const detail = isIncome
+    ? store.sourceName(next.sourceId) || 'Income'
+    : store.categoryName(next.categoryId) || 'Uncategorised'
+  return `
+    <article class="item">
+      <span class="avatar" style="background:${isIncome ? 'var(--green)' : 'var(--red)'}">${icon(isIncome ? 'up' : 'down')}</span>
+      <div class="body">
+        <div class="title">${escapeHtml(next.name)}</div>
+        <div class="meta">${escapeHtml(repeatLabel(repeat))} · next ${escapeHtml(store.formatDate(next.date))} at ${escapeHtml(next.time || '00:00')}</div>
+        <div class="meta">${escapeHtml(detail)} · ${upcoming.length} scheduled occurrence${upcoming.length === 1 ? '' : 's'} remaining</div>
+      </div>
+      <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
+    </article>
+  `
+}
+
+function repeatingScheduleDisclosure(kind, label) {
+  const schedules = store.getRepeatingSchedules(kind)
+  return `
+    <details class="repeat-disclosure">
+      <summary>
+        <span>${label}</span>
+        <span class="badge">${schedules.length} schedule${schedules.length === 1 ? '' : 's'}</span>
+      </summary>
+      <div class="list">
+        ${schedules.length ? schedules.map(repeatingScheduleRow).join('') : `<div class="empty">No repeated ${kind} scheduled.</div>`}
+      </div>
+    </details>
+  `
 }
 
 function icon(name) {
@@ -371,8 +413,8 @@ function renderWallets() {
 }
 
 function walletDetailRow(wallet) {
-  const income = store.getIncomes().filter((r) => r.walletId === wallet.id).reduce((s, r) => s + r.amount, 0)
-  const expense = store.getExpenses().filter((r) => r.walletId === wallet.id).reduce((s, r) => s + r.amount, 0)
+  const income = store.getIncomes().filter((r) => r.walletId === wallet.id && store.isDue(r)).reduce((s, r) => s + r.amount, 0)
+  const expense = store.getExpenses().filter((r) => r.walletId === wallet.id && store.isDue(r)).reduce((s, r) => s + r.amount, 0)
   return `
     <article class="item" style="align-items:start" data-action="open-wallet" data-id="${wallet.id}">
       ${walletAvatar(wallet)}
@@ -509,6 +551,14 @@ function renderMore() {
       </div>
       <button class="ghost-btn compact" data-action="set-theme">${settings.theme === 'light' ? 'Dark' : 'Light'} mode</button>
     </div>
+
+    <section class="section">
+      <div class="section-head"><h2>Repeated income &amp; expenses</h2></div>
+      <div class="repeat-disclosures">
+        ${repeatingScheduleDisclosure('income', 'Repeated income')}
+        ${repeatingScheduleDisclosure('expense', 'Repeated expense')}
+      </div>
+    </section>
 
     <section class="section">
       <div class="section-head"><h2>Assets</h2><button class="ghost-btn compact" data-action="new-asset">+ Add</button></div>
@@ -848,6 +898,17 @@ function render() {
   document.body.classList.toggle('modal-open', Boolean(modal))
   const repeatSel = document.querySelector('select[data-repeat]')
   if (repeatSel) syncRepeatPanels(repeatSel.value)
+  scheduleDueRefresh()
+}
+
+function scheduleDueRefresh() {
+  if (dueRefreshTimer) clearTimeout(dueRefreshTimer)
+  dueRefreshTimer = null
+  if (modal) return
+  const next = store.nextScheduledAt()
+  if (next === null) return
+  const delay = Math.min(2147483647, Math.max(0, next - Date.now() + 50))
+  dueRefreshTimer = setTimeout(() => render(), delay)
 }
 
 function syncRepeatPanels(value) {
@@ -1166,6 +1227,10 @@ async function pickBackupLocation() {
   downloadBackup(filename)
   toast('Backup exported')
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !modal) render()
+})
 
 // ---------- boot ----------
 

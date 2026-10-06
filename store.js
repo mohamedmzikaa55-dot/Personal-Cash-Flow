@@ -92,6 +92,13 @@ export function nowTime(date = new Date()) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+function isDue(record, now = new Date()) {
+  const today = todayISO(now)
+  if (record.date < today) return true
+  if (record.date > today) return false
+  return String(record.time || '00:00') <= nowTime(now)
+}
+
 export function monthKey(dateISO) {
   return String(dateISO || todayISO()).slice(0, 7)
 }
@@ -223,11 +230,22 @@ function recurringDates(fields) {
 }
 
 function normalizeIncome(rec) {
-  return { ...baseRecord(rec), sourceId: str(rec.sourceId, 60) }
+  return { ...baseRecord(rec), ...normalizeRecurrence(rec), sourceId: str(rec.sourceId, 60) }
 }
 
 function normalizeExpense(rec) {
-  return { ...baseRecord(rec), categoryId: str(rec.categoryId, 60) }
+  return { ...baseRecord(rec), ...normalizeRecurrence(rec), categoryId: str(rec.categoryId, 60) }
+}
+
+function normalizeRecurrence(rec) {
+  const repeat = ['weekly', 'monthly', 'custom'].includes(rec.repeat) ? rec.repeat : 'none'
+  return {
+    repeat,
+    repeatGroupId: str(rec.repeatGroupId, 60),
+    weekDays: Array.isArray(rec.weekDays) ? rec.weekDays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) : [],
+    monthDay: Math.min(31, Math.max(0, Number(rec.monthDay) || 0)),
+    customDays: Math.min(365, Math.max(0, Number(rec.customDays) || 0))
+  }
 }
 
 function normalizeTransfer(rec) {
@@ -390,12 +408,13 @@ function walletBalance(id) {
   if (!wallet) return 0
   let total = wallet.opening
   state.incomes.forEach((r) => {
-    if (r.walletId === id) total += r.amount
+    if (r.walletId === id && isDue(r)) total += r.amount
   })
   state.expenses.forEach((r) => {
-    if (r.walletId === id) total -= r.amount
+    if (r.walletId === id && isDue(r)) total -= r.amount
   })
   state.transfers.forEach((t) => {
+    if (!isDue(t)) return
     if (t.fromId === id) total -= t.amount + t.fee
     if (t.toId === id) total += t.amount
   })
@@ -414,9 +433,9 @@ function walletBalance(id) {
 function monthItems(month) {
   const inMonth = (date) => monthKey(date) === month
   return {
-    incomes: state.incomes.filter((r) => inMonth(r.date)),
-    expenses: state.expenses.filter((r) => inMonth(r.date)),
-    transfers: state.transfers.filter((r) => inMonth(r.date))
+    incomes: state.incomes.filter((r) => inMonth(r.date) && isDue(r)),
+    expenses: state.expenses.filter((r) => inMonth(r.date) && isDue(r)),
+    transfers: state.transfers.filter((r) => inMonth(r.date) && isDue(r))
   }
 }
 
@@ -432,7 +451,7 @@ function monthSummary(month) {
 function categoryTotals(month) {
   const totals = {}
   state.expenses.forEach((r) => {
-    if (monthKey(r.date) !== month) return
+    if (monthKey(r.date) !== month || !isDue(r)) return
     totals[r.categoryId] = (totals[r.categoryId] || 0) + r.amount
   })
   return totals
@@ -441,7 +460,7 @@ function categoryTotals(month) {
 function sourceTotals(month) {
   const totals = {}
   state.incomes.forEach((r) => {
-    if (monthKey(r.date) !== month) return
+    if (monthKey(r.date) !== month || !isDue(r)) return
     totals[r.sourceId] = (totals[r.sourceId] || 0) + r.amount
   })
   return totals
@@ -449,11 +468,65 @@ function sourceTotals(month) {
 
 function allTransactions() {
   const list = [
-    ...state.incomes.map((r) => ({ ...r, kind: 'income' })),
-    ...state.expenses.map((r) => ({ ...r, kind: 'expense' })),
-    ...state.transfers.map((t) => ({ ...t, kind: 'transfer' }))
+    ...state.incomes.filter((r) => isDue(r)).map((r) => ({ ...r, kind: 'income' })),
+    ...state.expenses.filter((r) => isDue(r)).map((r) => ({ ...r, kind: 'expense' })),
+    ...state.transfers.filter((r) => isDue(r)).map((t) => ({ ...t, kind: 'transfer' }))
   ]
-  return list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  return list.sort((a, b) => a.date === b.date
+    ? String(b.time || '').localeCompare(String(a.time || ''))
+    : (a.date < b.date ? 1 : -1))
+}
+
+function repeatingSchedules(kind) {
+  const records = kind === 'income' ? state.incomes : state.expenses
+  const groups = new Map()
+
+  records.forEach((record) => {
+    if (!record.repeatGroupId || record.repeat === 'none') return
+    if (!groups.has(record.repeatGroupId)) {
+      groups.set(record.repeatGroupId, { id: record.repeatGroupId, kind, repeat: record.repeat, records: [] })
+    }
+    groups.get(record.repeatGroupId).records.push(record)
+  })
+
+  const legacyGroups = new Map()
+  records.forEach((record) => {
+    if (record.repeatGroupId) return
+    const createdAt = String(record.createdAt || '').slice(0, 19)
+    const signature = JSON.stringify([
+      createdAt,
+      record.name,
+      record.amount,
+      record.walletId,
+      kind === 'income' ? record.sourceId : record.categoryId
+    ])
+    if (!legacyGroups.has(signature)) legacyGroups.set(signature, [])
+    legacyGroups.get(signature).push(record)
+  })
+  legacyGroups.forEach((items, signature) => {
+    if (items.length < 2 || new Set(items.map((item) => item.date)).size < 2) return
+    const upcoming = items.filter((item) => !isDue(item))
+    if (!upcoming.length) return
+    groups.set(`legacy-${kind}-${signature}`, { id: `legacy-${kind}-${signature}`, kind, repeat: 'scheduled', records: items })
+  })
+
+  return [...groups.values()].map((group) => {
+    const upcoming = group.records.filter((record) => !isDue(record))
+      .sort((a, b) => a.date === b.date
+        ? String(a.time || '').localeCompare(String(b.time || ''))
+        : (a.date < b.date ? -1 : 1))
+    return { ...group, upcoming, next: upcoming[0] }
+  }).filter((group) => group.upcoming.length > 0)
+}
+
+function nextScheduledAt() {
+  const now = new Date()
+  const pending = [...state.incomes, ...state.expenses, ...state.transfers]
+    .filter((record) => !isDue(record))
+    .map((record) => new Date(`${record.date}T${record.time || '00:00'}:00`))
+    .filter((date) => Number.isFinite(date.getTime()) && date > now)
+  const earliest = pending.reduce((timestamp, date) => Math.min(timestamp, date.getTime()), Infinity)
+  return Number.isFinite(earliest) ? earliest : null
 }
 
 function netWorth() {
@@ -714,6 +787,7 @@ export function importCSVText(text) {
 export const store = {
   todayISO,
   nowTime,
+  isDue,
   monthKey,
   monthLabel,
   parseMoney,
@@ -862,6 +936,11 @@ export const store = {
   getTransactions() {
     return allTransactions()
   },
+  getRepeatingSchedules(kind) {
+    return repeatingSchedules(kind)
+  },
+  nextScheduledAt,
+  isDue,
   findTransaction(kind, id) {
     if (kind === 'income') return state.incomes.find((r) => r.id === id) || null
     if (kind === 'expense') return state.expenses.find((r) => r.id === id) || null
@@ -870,14 +949,16 @@ export const store = {
   },
   addIncome(fields) {
     const dates = recurringDates(fields)
-    const made = dates.map((date) => normalizeIncome({ ...fields, date, name: fields.name || sourceName(fields.sourceId) || 'Income' }))
+    const repeatGroupId = fields.repeat && fields.repeat !== 'none' ? uid('rp') : ''
+    const made = dates.map((date) => normalizeIncome({ ...fields, repeatGroupId, date, name: fields.name || sourceName(fields.sourceId) || 'Income' }))
     state.incomes.push(...made)
     save()
     return made[0]
   },
   addExpense(fields) {
     const dates = recurringDates(fields)
-    const made = dates.map((date) => normalizeExpense({ ...fields, date, name: fields.name || categoryName(fields.categoryId) || 'Expense' }))
+    const repeatGroupId = fields.repeat && fields.repeat !== 'none' ? uid('rp') : ''
+    const made = dates.map((date) => normalizeExpense({ ...fields, repeatGroupId, date, name: fields.name || categoryName(fields.categoryId) || 'Expense' }))
     state.expenses.push(...made)
     save()
     return made[0]
@@ -965,8 +1046,8 @@ export const store = {
     for (let i = count - 1; i >= 0; i -= 1) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const income = state.incomes.filter((r) => monthKey(r.date) === key).reduce((s, r) => s + r.amount, 0)
-      const expense = state.expenses.filter((r) => monthKey(r.date) === key).reduce((s, r) => s + r.amount, 0)
+      const income = state.incomes.filter((r) => monthKey(r.date) === key && isDue(r)).reduce((s, r) => s + r.amount, 0)
+      const expense = state.expenses.filter((r) => monthKey(r.date) === key && isDue(r)).reduce((s, r) => s + r.amount, 0)
       out.push({ month: key, label: d.toLocaleDateString(undefined, { month: 'short' }), income, expense, net: income - expense })
     }
     return out
@@ -976,13 +1057,13 @@ export const store = {
   walletTransactions(id) {
     const rows = []
     state.incomes.forEach((r) => {
-      if (r.walletId === id) rows.push({ ...r, kind: 'income' })
+      if (r.walletId === id && isDue(r)) rows.push({ ...r, kind: 'income' })
     })
     state.expenses.forEach((r) => {
-      if (r.walletId === id) rows.push({ ...r, kind: 'expense' })
+      if (r.walletId === id && isDue(r)) rows.push({ ...r, kind: 'expense' })
     })
     state.transfers.forEach((t) => {
-      if (t.fromId === id || t.toId === id) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out' })
+      if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out' })
     })
     return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   },

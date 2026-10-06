@@ -689,6 +689,37 @@ label,
   font-size: 14px;
 }
 
+.repeat-disclosures {
+  display: grid;
+  gap: 9px;
+}
+
+.repeat-disclosure {
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.repeat-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.repeat-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+
+.repeat-disclosure .list .item {
+  padding: 11px;
+}
+
 .bar {
   height: 8px;
   border-radius: 999px;
