@@ -720,6 +720,31 @@ label,
   padding: 11px;
 }
 
+.repeat-actions {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.repeat-occurrences {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.repeat-occurrence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.repeat-occurrence .badge {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
 .bar {
   height: 8px;
   border-radius: 999px;

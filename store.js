@@ -244,7 +244,8 @@ function normalizeRecurrence(rec) {
     repeatGroupId: str(rec.repeatGroupId, 60),
     weekDays: Array.isArray(rec.weekDays) ? rec.weekDays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) : [],
     monthDay: Math.min(31, Math.max(0, Number(rec.monthDay) || 0)),
-    customDays: Math.min(365, Math.max(0, Number(rec.customDays) || 0))
+    customDays: Math.min(365, Math.max(0, Number(rec.customDays) || 0)),
+    excepted: rec.excepted === true
   }
 }
 
@@ -975,6 +976,28 @@ export const store = {
     if (kind === 'income') Object.assign(target, normalizeIncome({ ...target, ...fields, id }))
     else if (kind === 'expense') Object.assign(target, normalizeExpense({ ...target, ...fields, id }))
     else Object.assign(target, normalizeTransfer({ ...target, ...fields, id }))
+    if ((kind === 'income' || kind === 'expense') && target.repeatGroupId && target.repeat !== 'none') target.excepted = true
+    save()
+  },
+  updateSeries(kind, id, fields) {
+    const target = this.findTransaction(kind, id)
+    if (!target || !target.repeatGroupId || target.repeat === 'none') return this.updateTransaction(kind, id, fields)
+    const groupId = target.repeatGroupId
+    const fromDate = target.date
+    const list = kind === 'income' ? state.incomes : state.expenses
+    list.forEach((rec) => {
+      if (rec.repeatGroupId !== groupId || rec.date < fromDate) return
+      const patch = { ...rec }
+      if (fields.name !== undefined) patch.name = fields.name
+      if (fields.amount !== undefined) patch.amount = fields.amount
+      if (fields.time !== undefined) patch.time = fields.time
+      if (fields.walletId !== undefined) patch.walletId = fields.walletId
+      if (fields.note !== undefined) patch.note = fields.note
+      if (kind === 'income' && fields.sourceId !== undefined) patch.sourceId = fields.sourceId
+      if (kind === 'expense' && fields.categoryId !== undefined) patch.categoryId = fields.categoryId
+      patch.excepted = false
+      Object.assign(rec, kind === 'income' ? normalizeIncome(patch) : normalizeExpense(patch))
+    })
     save()
   },
   removeTransaction(kind, id) {

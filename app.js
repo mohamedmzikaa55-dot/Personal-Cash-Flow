@@ -110,8 +110,23 @@ function repeatingScheduleRow(schedule) {
         <div class="title">${escapeHtml(next.name)}</div>
         <div class="meta">${escapeHtml(repeatLabel(repeat))} · next ${escapeHtml(store.formatDate(next.date))} at ${escapeHtml(next.time || '00:00')}</div>
         <div class="meta">${escapeHtml(detail)} · ${upcoming.length} scheduled occurrence${upcoming.length === 1 ? '' : 's'} remaining</div>
+        <div class="repeat-occurrences">
+          ${upcoming.slice(0, 5).map((rec) => `
+            <div class="repeat-occurrence">
+              <span class="mono">${escapeHtml(store.formatDate(rec.date))}</span>
+              <span class="mono ${isIncome ? 'pos' : 'neg'}">${isIncome ? '+' : '−'}${money(rec.amount)}</span>
+              ${rec.excepted ? '<span class="badge gold">edited</span>' : ''}
+              <button class="mini-btn" type="button" data-action="edit-transaction" data-kind="${kind}" data-id="${escapeHtml(rec.id)}" title="Edit this occurrence" aria-label="Edit this occurrence">${icon('edit')}</button>
+              <button class="mini-btn danger" type="button" data-action="delete-upcoming-repeat" data-kind="${kind}" data-id="${escapeHtml(rec.id)}" title="Skip this occurrence" aria-label="Skip this occurrence">${icon('trash')}</button>
+            </div>
+          `).join('')}
+          ${upcoming.length > 5 ? `<div class="muted tight">…and ${upcoming.length - 5} more</div>` : ''}
+        </div>
       </div>
-      <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
+      <div class="repeat-actions">
+        <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
+        <button class="mini-btn danger" type="button" data-action="delete-upcoming-repeat" data-kind="${kind}" data-id="${escapeHtml(next.id)}" aria-label="Delete next repeated ${kind}" title="Delete next occurrence">${icon('trash')}</button>
+      </div>
     </article>
   `
 }
@@ -534,6 +549,22 @@ function renderBudgets() {
         `).join('')}
       </div>
     </section>` : ''}
+
+    <section class="section">
+      <div class="section-head"><h2>Income sources</h2><button class="ghost-btn compact" data-action="new-source">+ Add</button></div>
+      <div class="list">
+        ${store.getSources().map((s) => `
+          <article class="item" data-action="edit-source" data-id="${s.id}">
+            <span class="avatar" style="background:var(--blue)">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
+            <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
+            <div style="display:flex;gap:6px">
+              <button class="mini-btn" data-action="edit-source" data-id="${s.id}">${icon('edit')}</button>
+              <button class="mini-btn danger" data-action="delete-source" data-id="${s.id}">${icon('trash')}</button>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
   `
 }
 
@@ -541,7 +572,6 @@ function renderMore() {
   const settings = store.getSettings()
   const debts = store.debtSummary()
   const assets = store.getAssets()
-  const sources = store.getSources()
   const report = store.importReport()
   return `
     <div class="topbar">
@@ -591,22 +621,6 @@ function renderMore() {
             <div class="amount ${d.direction === 'Collect' ? 'pos' : 'neg'} mono">${money(d.amount)}</div>
           </article>
         `).join('') : '<div class="empty">No debts tracked.</div>'}
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-head"><h2>Income sources</h2><button class="ghost-btn compact" data-action="new-source">+ Add</button></div>
-      <div class="list">
-        ${sources.map((s) => `
-          <article class="item" data-action="edit-source" data-id="${s.id}">
-            <span class="avatar" style="background:var(--blue)">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
-            <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
-            <div style="display:flex;gap:6px">
-              <button class="mini-btn" data-action="edit-source" data-id="${s.id}">${icon('edit')}</button>
-              <button class="mini-btn danger" data-action="delete-source" data-id="${s.id}">${icon('trash')}</button>
-            </div>
-          </article>
-        `).join('')}
       </div>
     </section>
 
@@ -754,6 +768,11 @@ function renderModal() {
         <label>Source${optionSelect(store.getSources(), r.sourceId, 'sourceId')}</label>
       </div>
       <label>Note (optional)<textarea name="note" maxlength="400">${escapeHtml(r.note || '')}</textarea></label>
+      ${isEdit && r.repeatGroupId ? `
+      <p class="muted tight">This income is part of a repeated series. Saving changes only this occurrence — it becomes an exception.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <input type="checkbox" name="applySeries" style="width:auto" /> Apply amount, description, time, wallet &amp; source to this and all upcoming occurrences
+      </label>` : ''}
     `
   } else if (modal === 'expense') {
     const r = modalPayload || {}
@@ -788,6 +807,11 @@ function renderModal() {
         <label>Category${optionSelect(store.getCategories(), r.categoryId, 'categoryId')}</label>
       </div>
       <label>Note (optional)<textarea name="note" maxlength="400">${escapeHtml(r.note || '')}</textarea></label>
+      ${isEdit && r.repeatGroupId ? `
+      <p class="muted tight">This expense is part of a repeated series. Saving changes only this occurrence — it becomes an exception.</p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+        <input type="checkbox" name="applySeries" style="width:auto" /> Apply amount, description, time, wallet &amp; category to this and all upcoming occurrences
+      </label>` : ''}
     `
   } else if (modal === 'transfer') {
     const r = modalPayload || {}
@@ -1029,6 +1053,27 @@ document.addEventListener('click', (event) => {
     render()
     return
   }
+  if (action === 'delete-upcoming-repeat') {
+    const kind = actionEl.dataset.kind
+    const record = store.findTransaction(kind, actionEl.dataset.id)
+    if (!record || !['income', 'expense'].includes(kind)) {
+      toast('That scheduled item is no longer available')
+      render()
+      return
+    }
+    if (store.isDue(record)) {
+      toast('That item is due already and was not deleted')
+      render()
+      return
+    }
+    const label = kind === 'income' ? 'income' : 'expense'
+    const when = `${store.formatDate(record.date)} at ${record.time || '00:00'}`
+    if (!window.confirm(`Delete the upcoming ${label} "${record.name}" scheduled for ${when}? Other scheduled occurrences will remain.`)) return
+    store.removeTransaction(kind, record.id)
+    toast('Upcoming occurrence deleted')
+    render()
+    return
+  }
   if (action === 'delete-transaction') {
     if (!window.confirm('Delete this transaction?')) return
     store.removeTransaction(actionEl.dataset.kind, actionEl.dataset.id)
@@ -1111,13 +1156,15 @@ document.addEventListener('submit', (event) => {
   } else if (type === 'income') {
     const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
-    if (id) store.updateTransaction('income', id, fields)
+    if (id && data.get('applySeries') === 'on') store.updateSeries('income', id, fields)
+    else if (id) store.updateTransaction('income', id, fields)
     else store.addIncome(fields)
     toast(id ? 'Income updated' : 'Income added')
   } else if (type === 'expense') {
     const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
-    if (id) store.updateTransaction('expense', id, fields)
+    if (id && data.get('applySeries') === 'on') store.updateSeries('expense', id, fields)
+    else if (id) store.updateTransaction('expense', id, fields)
     else store.addExpense(fields)
     toast(id ? 'Expense updated' : 'Expense added')
   } else if (type === 'transfer') {
