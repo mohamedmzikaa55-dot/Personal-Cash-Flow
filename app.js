@@ -11,6 +11,8 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); defe
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
 let dueRefreshTimer = null
+let calMonth = null
+let calSelected = null
 
 // ---------- overlay history ----------
 // Every modal / drill-down pushes a history entry so the Android back button,
@@ -98,7 +100,7 @@ function repeatLabel(repeat) {
 }
 
 function repeatingScheduleRow(schedule) {
-  const { kind, next, upcoming, repeat } = schedule
+  const { kind, next, upcoming, skipped, repeat, id } = schedule
   const isIncome = kind === 'income'
   const detail = isIncome
     ? store.sourceName(next.sourceId) || 'Income'
@@ -109,23 +111,11 @@ function repeatingScheduleRow(schedule) {
       <div class="body">
         <div class="title">${escapeHtml(next.name)}</div>
         <div class="meta">${escapeHtml(repeatLabel(repeat))} · next ${escapeHtml(store.formatDate(next.date))} at ${escapeHtml(next.time || '00:00')}</div>
-        <div class="meta">${escapeHtml(detail)} · ${upcoming.length} scheduled occurrence${upcoming.length === 1 ? '' : 's'} remaining</div>
-        <div class="repeat-occurrences">
-          ${upcoming.slice(0, 5).map((rec) => `
-            <div class="repeat-occurrence">
-              <span class="mono">${escapeHtml(store.formatDate(rec.date))}</span>
-              <span class="mono ${isIncome ? 'pos' : 'neg'}">${isIncome ? '+' : '−'}${money(rec.amount)}</span>
-              ${rec.excepted ? '<span class="badge gold">edited</span>' : ''}
-              <button class="mini-btn" type="button" data-action="edit-transaction" data-kind="${kind}" data-id="${escapeHtml(rec.id)}" title="Edit this occurrence" aria-label="Edit this occurrence">${icon('edit')}</button>
-              <button class="mini-btn danger" type="button" data-action="delete-upcoming-repeat" data-kind="${kind}" data-id="${escapeHtml(rec.id)}" title="Skip this occurrence" aria-label="Skip this occurrence">${icon('trash')}</button>
-            </div>
-          `).join('')}
-          ${upcoming.length > 5 ? `<div class="muted tight">…and ${upcoming.length - 5} more</div>` : ''}
-        </div>
+        <div class="meta">${escapeHtml(detail)} · ${upcoming.length} remaining${skipped ? ` · ${skipped} skipped` : ''}</div>
       </div>
       <div class="repeat-actions">
         <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
-        <button class="mini-btn danger" type="button" data-action="delete-upcoming-repeat" data-kind="${kind}" data-id="${escapeHtml(next.id)}" aria-label="Delete next repeated ${kind}" title="Delete next occurrence">${icon('trash')}</button>
+        <button class="mini-btn" type="button" data-action="open-schedule" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="Manage dates" title="Open calendar">${icon('cal')}</button>
       </div>
     </article>
   `
@@ -159,6 +149,7 @@ function icon(name) {
     up: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
     down: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
     transfer: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
     left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
     right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
   }
@@ -364,9 +355,26 @@ function txRow(tx) {
   `
 }
 
+function pendingTransferRow(tx) {
+  return `
+    <article class="item">
+      <span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>
+      <div class="body">
+        <div class="title">${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')}</div>
+        <div class="meta">${money(tx.amount)}${tx.fee ? ` + fee ${money(tx.fee)}` : ''} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}</div>
+      </div>
+      <div class="row-actions">
+        <button class="mini-btn" data-action="edit-transaction" data-kind="transfer" data-id="${tx.id}" title="Edit" aria-label="Edit pending transfer">${icon('edit')}</button>
+        <button class="ghost-btn compact" data-action="release-pending" data-id="${tx.id}">Release</button>
+      </div>
+    </article>
+  `
+}
+
 function renderTransactions() {
   const all = store.getTransactions()
   const list = txFilter === 'all' ? all : all.filter((t) => t.kind === txFilter)
+  const pendingTransfers = store.getTransfers().filter((t) => t.pending)
   const summary = store.monthSummary(month)
   return `
     <div class="topbar">
@@ -394,6 +402,18 @@ function renderTransactions() {
     <div class="list">
       ${list.length ? list.map(txRow).join('') : `<div class="empty">No ${txFilter === 'all' ? '' : txFilter + ' '}transactions this period.</div>`}
     </div>
+
+    ${pendingTransfers.length ? `
+    <section class="section" style="margin-top:18px">
+      <div class="section-head">
+        <h2>Pending transfers</h2>
+        <button class="ghost-btn compact" data-action="release-all-pending">Release all</button>
+      </div>
+      <p class="muted tight" style="margin-bottom:10px">These transfers are waiting — release one to move the money between wallets.</p>
+      <div class="list">
+        ${pendingTransfers.map(pendingTransferRow).join('')}
+      </div>
+    </section>` : ''}
   `
 }
 
@@ -691,10 +711,88 @@ function renderMore() {
   `
 }
 
+// ---------- schedule calendar ----------
+
+function shiftCal(delta) {
+  const base = calMonth || store.monthKey(store.todayISO())
+  const [y, m] = base.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function scheduleModalHtml() {
+  const { kind, groupId } = modalPayload || {}
+  const records = (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || [])
+    .filter((r) => r.repeatGroupId === groupId)
+  const byDate = {}
+  records.forEach((r) => { byDate[r.date] = r })
+  if (!calMonth) calMonth = store.monthKey(store.todayISO())
+  const [y, m] = calMonth.split('-').map(Number)
+  const startDow = new Date(y, m - 1, 1).getDay()
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startDow; i += 1) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, iso, record: byDate[iso] || null })
+  }
+  const selected = calSelected && byDate[calSelected] ? byDate[calSelected] : null
+  const isIncome = kind === 'income'
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <div class="sheet">
+        <div class="handle"></div>
+        <h2>${isIncome ? 'Income' : 'Expense'} schedule</h2>
+        <div class="cal-head">
+          <button class="icon-btn" type="button" data-action="cal-prev" aria-label="Previous month">${icon('left')}</button>
+          <b>${escapeHtml(store.monthLabel(calMonth))}</b>
+          <button class="icon-btn" type="button" data-action="cal-next" aria-label="Next month">${icon('right')}</button>
+        </div>
+        <div class="cal-grid">
+          ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => `<span class="cal-dow">${d}</span>`).join('')}
+          ${cells.map((cell) => {
+            if (!cell) return '<span class="cal-day blank"></span>'
+            const rec = cell.record
+            if (!rec) return `<span class="cal-day"><span class="cal-num">${cell.day}</span></span>`
+            const cls = ['cal-day', 'has']
+            if (rec.skipped) cls.push('skipped')
+            if (rec.excepted) cls.push('edited')
+            if (calSelected === cell.iso) cls.push('sel')
+            return `<button class="${cls.join(' ')}" type="button" data-action="cal-select" data-date="${cell.iso}">
+              <span class="cal-num">${cell.day}</span>
+              <i class="cal-amt">${money(rec.amount)}</i>
+            </button>`
+          }).join('')}
+        </div>
+        <p class="muted tight">Tap a highlighted day to skip it, restore it or replace it.</p>
+        ${selected ? `
+        <div class="cal-detail">
+          <div class="cal-detail-top">
+            <b>${escapeHtml(store.formatDate(selected.date))}</b>
+            <span class="mono ${isIncome ? 'pos' : 'neg'}">${isIncome ? '+' : '−'}${money(selected.amount)}</span>
+            ${selected.skipped ? '<span class="badge gold">Skipped</span>' : ''}
+            ${selected.excepted ? '<span class="badge">Edited</span>' : ''}
+          </div>
+          <div class="row-actions">
+            <button class="ghost-btn compact" type="button" data-action="cal-toggle-skip" data-kind="${kind}" data-id="${selected.id}">${selected.skipped ? 'Restore' : 'Skip'}</button>
+            <button class="ghost-btn compact" type="button" data-action="cal-replace" data-kind="${kind}" data-id="${selected.id}">Replace</button>
+            <button class="ghost-btn compact danger" type="button" data-action="cal-delete" data-kind="${kind}" data-id="${selected.id}">Delete</button>
+          </div>
+        </div>` : ''}
+        <div class="form-actions">
+          <button class="ghost-btn" type="button" data-action="close-modal">Done</button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 // ---------- modal ----------
 
 function renderModal() {
   if (!modal) return ''
+
+  if (modal === 'schedule') return scheduleModalHtml()
 
   if (modal === 'choose') {
     return `
@@ -1049,6 +1147,44 @@ document.addEventListener('click', (event) => {
     openModal(kind, { ...rec })
     return
   }
+  if (action === 'open-schedule') {
+    calMonth = store.monthKey(store.todayISO())
+    calSelected = null
+    openModal('schedule', { kind: actionEl.dataset.kind, groupId: actionEl.dataset.id })
+    return
+  }
+  if (action === 'cal-prev') { shiftCal(-1); calSelected = null; render(); return }
+  if (action === 'cal-next') { shiftCal(1); calSelected = null; render(); return }
+  if (action === 'cal-select') { calSelected = actionEl.dataset.date; render(); return }
+  if (action === 'cal-toggle-skip') {
+    const kind = actionEl.dataset.kind
+    const rec = store.findTransaction(kind, actionEl.dataset.id)
+    if (!rec) { render(); return }
+    store.skipTransaction(kind, actionEl.dataset.id, !rec.skipped)
+    toast(!rec.skipped ? 'Occurrence skipped' : 'Occurrence restored')
+    render()
+    return
+  }
+  if (action === 'cal-replace') {
+    const kind = actionEl.dataset.kind
+    const rec = store.findTransaction(kind, actionEl.dataset.id)
+    if (!rec) return
+    calSelected = null
+    openModal(kind, { ...rec }, true)
+    return
+  }
+  if (action === 'cal-delete') {
+    const kind = actionEl.dataset.kind
+    if (!window.confirm('Delete this occurrence?')) return
+    store.removeTransaction(kind, actionEl.dataset.id)
+    calSelected = null
+    const groupId = modalPayload && modalPayload.groupId
+    const remaining = (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || []).filter((r) => r.repeatGroupId === groupId)
+    toast('Occurrence deleted')
+    if (!remaining.length) { goBack(); return }
+    render()
+    return
+  }
   if (action === 'delete-category') {
     if (!window.confirm('Delete this category? Its expenses become uncategorised.')) return
     store.removeCategory(actionEl.dataset.id)
@@ -1089,6 +1225,19 @@ document.addEventListener('click', (event) => {
     if (!window.confirm(`Delete the upcoming ${label} "${record.name}" scheduled for ${when}? Other scheduled occurrences will remain.`)) return
     store.removeTransaction(kind, record.id)
     toast('Upcoming occurrence deleted')
+    render()
+    return
+  }
+  if (action === 'release-pending') {
+    store.updateTransaction('transfer', actionEl.dataset.id, { pending: false })
+    toast('Transfer released')
+    render()
+    return
+  }
+  if (action === 'release-all-pending') {
+    const waiting = store.getTransfers().filter((t) => t.pending)
+    waiting.forEach((t) => store.updateTransaction('transfer', t.id, { pending: false }))
+    toast(`Released ${waiting.length} transfer${waiting.length === 1 ? '' : 's'}`)
     render()
     return
   }

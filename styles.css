@@ -859,6 +859,110 @@ label,
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- schedule calendar ---------- */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.cal-head b {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 18px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.cal-dow {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding-bottom: 3px;
+}
+
+.cal-day {
+  min-height: 48px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 4px 2px;
+}
+
+.cal-day.blank {
+  visibility: hidden;
+}
+
+.cal-day .cal-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cal-day.has {
+  background: var(--card-2);
+  border-color: var(--line);
+  cursor: pointer;
+}
+
+.cal-day.has .cal-num {
+  color: var(--text);
+}
+
+.cal-day .cal-amt {
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+}
+
+.cal-day.skipped {
+  opacity: 0.55;
+}
+
+.cal-day.skipped .cal-amt {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.cal-day.edited {
+  border-color: rgba(244, 185, 66, 0.45);
+}
+
+.cal-day.sel {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.cal-detail {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.cal-detail-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 380px) {
   .stat-grid {
     grid-template-columns: 1fr 1fr;
