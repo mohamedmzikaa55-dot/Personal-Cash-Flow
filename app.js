@@ -348,9 +348,9 @@ function txRow(tx) {
     amount = `<div class="amount neg mono">-${money(tx.amount)}</div>`
   } else {
     avatar = `<span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>`
-    title = 'Transfer'
+    title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount mono">${money(tx.amount)}</div>`
+    amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${money(tx.amount)}</div>`
   }
   return `
     <article class="item" data-action="edit-transaction" data-kind="${tx.kind}" data-id="${tx.id}">
@@ -459,8 +459,8 @@ function renderWalletDetail() {
   const tx = store.walletTransactions(wallet.id)
   const income = tx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
   const expense = tx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
-  const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in').reduce((s, r) => s + r.amount, 0)
-  const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out').reduce((s, r) => s + r.amount + (r.fee || 0), 0)
+  const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in' && store.transferCounts(r)).reduce((s, r) => s + r.amount, 0)
+  const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out' && store.transferCounts(r)).reduce((s, r) => s + r.amount + (r.fee || 0), 0)
   return `
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
@@ -587,6 +587,20 @@ function renderMore() {
       <div class="repeat-disclosures">
         ${repeatingScheduleDisclosure('income', 'Repeated income')}
         ${repeatingScheduleDisclosure('expense', 'Repeated expense')}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Preferences</h2></div>
+      <div class="list">
+        <div class="budget-row">
+          <div class="top"><b>Pending transfers</b></div>
+          <p class="muted tight">Choose what a transfer marked “Pending” does: wait until you untick it, or move the money right away.</p>
+          <div class="chip-row">
+            <button class="chip ${settings.pendingAffectsBalance ? '' : 'on'}" data-action="set-pending-behavior" data-value="wait">Don't move money yet</button>
+            <button class="chip ${settings.pendingAffectsBalance ? 'on' : ''}" data-action="set-pending-behavior" data-value="count">Count as moved</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -826,6 +840,9 @@ function renderModal() {
         <label>To${walletSelect(r.toId, 'toId')}</label>
       </div>
       <label>Fee (optional)<input name="fee" type="number" step="0.01" value="${r.fee ? Number(r.fee) : ''}" placeholder="0.00" /></label>
+      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="pending" ${r.pending ? 'checked' : ''} style="width:auto" /> Pending transfer — don't move money yet
+      </label>
       <label>Note (optional)<textarea name="note" maxlength="400">${escapeHtml(r.note || '')}</textarea></label>
     `
   } else if (modal === 'asset') {
@@ -982,6 +999,7 @@ document.addEventListener('click', (event) => {
   if (action === 'month-now') { month = store.monthKey(store.todayISO()); render(); return }
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
+  if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
   if (action === 'refresh-rate') {
     store.refreshRate().then((res) => { toast(res.ok ? 'Rate updated' : (res.reason || 'Could not update')); render() })
@@ -1171,11 +1189,11 @@ document.addEventListener('submit', (event) => {
     const fromId = get('fromId')
     const toId = get('toId')
     if (!fromId || !toId || fromId === toId) { toast('Pick two different wallets'); return }
-    const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note') }
+    const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note'), pending: data.get('pending') === 'on' }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateTransaction('transfer', id, fields)
     else store.addTransfer(fields)
-    toast(id ? 'Transfer updated' : 'Transfer added')
+    toast(id ? 'Transfer updated' : (fields.pending ? 'Pending transfer added' : 'Transfer added'))
   } else if (type === 'asset') {
     const fields = { name: get('name'), buyingPrice: num('buyingPrice'), sellingPrice: num('sellingPrice'), walletId: get('walletId'), date: get('date'), sold: data.get('sold') === 'on' }
     if (!fields.name) return

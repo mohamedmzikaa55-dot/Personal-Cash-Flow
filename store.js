@@ -92,6 +92,11 @@ export function nowTime(date = new Date()) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+// A pending transfer only moves money when the user opts to count them.
+function transferCounts(transfer) {
+  return !transfer.pending || state.settings.pendingAffectsBalance === true
+}
+
 function isDue(record, now = new Date()) {
   const today = todayISO(now)
   if (record.date < today) return true
@@ -259,6 +264,7 @@ function normalizeTransfer(rec) {
     date: isValidISO(rec.date) ? rec.date : todayISO(),
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     note: str(rec.note, 400),
+    pending: rec.pending === true,
     createdAt: rec.createdAt || new Date().toISOString()
   }
 }
@@ -296,7 +302,7 @@ function normalizeDebt(debt) {
 function defaultState() {
   return {
     version: 1,
-    settings: { currency: '$', theme: 'dark', mainCurrency: 'EGP', secondaryCurrency: '$', exchangeRate: null, rateUpdatedAt: '' },
+    settings: { currency: '$', theme: 'dark', mainCurrency: 'EGP', secondaryCurrency: '$', exchangeRate: null, rateUpdatedAt: '', pendingAffectsBalance: false },
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
     sources: DEFAULT_SOURCES.map((name) => normalizeSource({ name })),
@@ -317,7 +323,8 @@ function migrate(raw) {
     mainCurrency: str(raw.settings && raw.settings.mainCurrency, 12) || 'EGP',
     secondaryCurrency: str(raw.settings && raw.settings.secondaryCurrency, 12) || '$',
     exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
-    rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40)
+    rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40),
+    pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true
   }
   if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
   if (Array.isArray(raw.categories) && raw.categories.length) out.categories = raw.categories.map(normalizeCategory)
@@ -415,7 +422,7 @@ function walletBalance(id) {
     if (r.walletId === id && isDue(r)) total -= r.amount
   })
   state.transfers.forEach((t) => {
-    if (!isDue(t)) return
+    if (!transferCounts(t) || !isDue(t)) return
     if (t.fromId === id) total -= t.amount + t.fee
     if (t.toId === id) total += t.amount
   })
@@ -436,7 +443,7 @@ function monthItems(month) {
   return {
     incomes: state.incomes.filter((r) => inMonth(r.date) && isDue(r)),
     expenses: state.expenses.filter((r) => inMonth(r.date) && isDue(r)),
-    transfers: state.transfers.filter((r) => inMonth(r.date) && isDue(r))
+    transfers: state.transfers.filter((r) => inMonth(r.date) && isDue(r) && transferCounts(r))
   }
 }
 
@@ -523,7 +530,7 @@ function repeatingSchedules(kind) {
 function nextScheduledAt() {
   const now = new Date()
   const pending = [...state.incomes, ...state.expenses, ...state.transfers]
-    .filter((record) => !isDue(record))
+    .filter((record) => transferCounts(record) && !isDue(record))
     .map((record) => new Date(`${record.date}T${record.time || '00:00'}:00`))
     .filter((date) => Number.isFinite(date.getTime()) && date > now)
   const earliest = pending.reduce((timestamp, date) => Math.min(timestamp, date.getTime()), Infinity)
@@ -843,6 +850,11 @@ export const store = {
     state.settings.theme = mode === 'light' ? 'light' : 'dark'
     save()
   },
+  setPendingAffectsBalance(value) {
+    state.settings.pendingAffectsBalance = value === true
+    save()
+  },
+  transferCounts,
 
   // Wallets
   getWallets() {
