@@ -367,6 +367,17 @@ h2 svg {
   flex-wrap: wrap;
 }
 
+.filter-bar {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-bottom: 12px;
+}
+
+.filter-bar .chip-row {
+  width: 100%;
+}
+
 .chip-row.segmented {
   display: inline-flex;
   flex-wrap: wrap;

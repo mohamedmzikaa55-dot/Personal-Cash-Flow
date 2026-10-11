@@ -10,6 +10,7 @@ let deferredInstall = null
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; render() })
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
+let txPeriod = 'month'
 let dueRefreshTimer = null
 let calMonth = null
 let calSelected = null
@@ -116,6 +117,7 @@ function repeatingScheduleRow(schedule) {
       <div class="repeat-actions">
         <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
         <div class="row-actions">
+          <button class="mini-btn" type="button" data-action="edit-transaction" data-kind="${kind}" data-id="${next.id}" aria-label="Edit schedule" title="Edit this schedule">${icon('edit')}</button>
           <button class="mini-btn" type="button" data-action="open-schedule" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="Manage dates" title="Open calendar">${icon('cal')}</button>
           <button class="mini-btn danger" type="button" data-action="end-series" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="End recurring series" title="End this recurring series">${icon('trash')}</button>
         </div>
@@ -173,6 +175,11 @@ function shiftMonth(delta) {
   const [y, m] = month.split('-').map(Number)
   const d = new Date(y, m - 1 + delta, 1)
   month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// On Activity with the Year filter the arrows step a year at a time.
+function monthStep() {
+  return screen === 'activity' && txPeriod === 'year' ? 12 : 1
 }
 
 function walletSelect(selected, name, required = true) {
@@ -401,36 +408,92 @@ function pendingTransferRow(tx) {
   `
 }
 
+// ---------- activity period filters ----------
+
+// Day/Week always follow today; Month/Year follow the month the user has
+// navigated to, so the arrows still work (year steps by 12 months).
+function periodRange(period) {
+  const today = store.todayISO()
+  if (period === 'day') return { from: today, to: today }
+  if (period === 'week') {
+    const start = new Date(`${today}T00:00:00`)
+    start.setDate(start.getDate() - start.getDay())
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    return { from: store.todayISO(start), to: store.todayISO(end) }
+  }
+  if (period === 'year') {
+    const y = month.slice(0, 4)
+    return { from: `${y}-01-01`, to: `${y}-12-31` }
+  }
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, '0')}` }
+}
+
+function periodTitle(period, range) {
+  if (period === 'day') return store.formatDate(range.from)
+  if (period === 'week') return `${store.formatDate(range.from)} – ${store.formatDate(range.to)}`
+  if (period === 'year') return range.from.slice(0, 4)
+  return store.monthLabel(month)
+}
+
+function periodWord(period) {
+  if (period === 'day') return 'today'
+  if (period === 'week') return 'this week'
+  if (period === 'year') return 'this year'
+  return 'this month'
+}
+
 function renderTransactions() {
   const all = store.getTransactions()
-  const list = txFilter === 'all' ? all : all.filter((t) => t.kind === txFilter)
+  const range = periodRange(txPeriod)
+  const inPeriod = all.filter((t) => {
+    const d = t.effDate || t.date
+    return d >= range.from && d <= range.to
+  })
+  const list = txFilter === 'all' ? inPeriod : inPeriod.filter((t) => t.kind === txFilter)
   const pendingTransfers = store.getTransfers().filter((t) => t.pending)
-  const summary = store.monthSummary(month)
+  const income = inPeriod.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0)
+  const expense = inPeriod.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0)
+  const net = income - expense
+  const showsMonthNav = txPeriod === 'month' || txPeriod === 'year'
+  const periodChips = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']]
   return `
     <div class="topbar">
       <div>
         <p class="kicker">Cash flow</p>
         <h1>Activity</h1>
       </div>
-      <div class="topbar-actions">${monthNav()}</div>
+      <div class="topbar-actions">
+        ${showsMonthNav ? monthNav() : `<span class="pill">${txPeriod === 'day' ? 'Today' : 'This week'}</span>`}
+      </div>
     </div>
 
     <section class="hero" style="padding:14px">
+      <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${inPeriod.length} transaction${inPeriod.length === 1 ? '' : 's'}</p>
       <div class="stat-grid" style="margin-top:0">
-        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(summary.income)}</b></div>
-        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(summary.expense)}</b></div>
-        <div class="stat"><span class="muted">Net</span><b class="${summary.net >= 0 ? 'pos' : 'neg'} mono">${money(summary.net)}</b></div>
+        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
+        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
+        <div class="stat"><span class="muted">Net</span><b class="${net >= 0 ? 'pos' : 'neg'} mono">${money(net)}</b></div>
       </div>
     </section>
 
-    <div class="chip-row" style="margin-bottom:12px">
-      ${[['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']].map(([value, label]) =>
-        `<button class="chip ${txFilter === value ? 'on' : ''}" data-action="set-filter" data-filter="${value}">${label}</button>`
-      ).join('')}
+    <div class="filter-bar">
+      <div class="chip-row segmented">
+        ${periodChips.map(([value, label]) =>
+          `<button class="chip ${txPeriod === value ? 'on' : ''}" data-action="set-period" data-period="${value}">${label}</button>`
+        ).join('')}
+      </div>
+      <div class="chip-row">
+        ${[['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']].map(([value, label]) =>
+          `<button class="chip ${txFilter === value ? 'on' : ''}" data-action="set-filter" data-filter="${value}">${label}</button>`
+        ).join('')}
+      </div>
     </div>
 
     <div class="list">
-      ${list.length ? list.map(txRow).join('') : emptyState(`No ${txFilter === 'all' ? '' : txFilter + ' '}transactions this period.`, 'inbox')}
+      ${list.length ? list.map(txRow).join('') : emptyState(`No ${txFilter === 'all' ? '' : txFilter + ' '}transactions ${periodWord(txPeriod)}.`, 'inbox')}
     </div>
 
     ${pendingTransfers.length ? `
@@ -937,11 +1000,6 @@ function renderModal() {
               <span class="choose-body"><b>Transfer</b><span class="muted">Move between wallets</span></span>
               ${icon('right')}
             </button>
-            <button class="choose-item" data-action="open-wallet-new">
-              <span class="avatar" style="background:var(--gold)">${icon('wallet')}</span>
-              <span class="choose-body"><b>Wallet</b><span class="muted">Add an account</span></span>
-              ${icon('right')}
-            </button>
             <button class="choose-item" data-action="new-goal">
               <span class="avatar" style="background:var(--gold)">${icon('target')}</span>
               <span class="choose-body"><b>Goal</b><span class="muted">A monthly spending limit</span></span>
@@ -1267,10 +1325,11 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'wallet-back') { goBack(); return }
 
-  if (action === 'month-prev') { shiftMonth(-1); render(); return }
-  if (action === 'month-next') { shiftMonth(1); render(); return }
+  if (action === 'month-prev') { shiftMonth(monthStep() * -1); render(); return }
+  if (action === 'month-next') { shiftMonth(monthStep()); render(); return }
   if (action === 'month-now') { month = store.monthKey(store.todayISO()); render(); return }
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
+  if (action === 'set-period') { txPeriod = actionEl.dataset.period || 'month'; render(); return }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
