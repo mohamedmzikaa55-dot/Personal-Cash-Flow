@@ -1,5 +1,5 @@
 ﻿// Personal Cash Flow - offline shell.
-const VERSION = 'pcf-v9'
+const VERSION = 'pcf-v10'
 const CORE = [
   './',
   './index.html',

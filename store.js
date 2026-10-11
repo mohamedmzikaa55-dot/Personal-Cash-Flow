@@ -103,10 +103,17 @@ function isActive(record) {
   return record.skipped !== true
 }
 
+// A released pending transfer counts from the day it was released — that is
+// when the money actually moved — not from its original scheduled date.
+function effectiveDate(record) {
+  return record.releasedDate || record.date
+}
+
 function isDue(record, now = new Date()) {
+  const date = effectiveDate(record)
   const today = todayISO(now)
-  if (record.date < today) return true
-  if (record.date > today) return false
+  if (date < today) return true
+  if (date > today) return false
   return String(record.time || '00:00') <= nowTime(now)
 }
 
@@ -223,9 +230,12 @@ function recurringDates(fields) {
   if (repeat === 'monthly') {
     const dayOfMonth = Math.min(31, Math.max(1, Number(fields.monthDay) || begin.getDate()))
     for (let i = 0; i < 12; i++) {
-      const d = new Date(begin.getFullYear(), begin.getMonth() + i, dayOfMonth)
+      const months = begin.getMonth() + i
+      // Clamp to the last day of shorter months (e.g. day 31 -> Feb 28/29)
+      // instead of skipping those months entirely.
+      const lastDay = new Date(begin.getFullYear(), months + 1, 0).getDate()
+      const d = new Date(begin.getFullYear(), months, Math.min(dayOfMonth, lastDay))
       if (d < begin) continue
-      if (d.getMonth() !== (begin.getMonth() + i) % 12) continue
       out.push(todayISO(d))
     }
     return out.length ? out : [start]
@@ -272,6 +282,7 @@ function normalizeTransfer(rec) {
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     note: str(rec.note, 400),
     pending: rec.pending === true,
+    releasedDate: isValidISO(rec.releasedDate) ? rec.releasedDate : '',
     createdAt: rec.createdAt || new Date().toISOString()
   }
 }
@@ -364,6 +375,50 @@ function save() {
   }
 }
 
+// Recurring income/expense series only pre-generate a limited window of dates
+// when they are created (~12 months). Without this, a monthly salary would
+// silently stop appearing after a year. Top up any series that is running low
+// (or has run out) so it keeps repeating indefinitely. Series that were ended
+// explicitly have repeat === 'none' on every record, so they are never topped
+// back up.
+function extendRecurringSeries() {
+  const soon = todayISO(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000))
+  let changed = false
+  const extend = (list, kind) => {
+    const groups = new Map()
+    list.forEach((rec) => {
+      if (!rec.repeatGroupId || rec.repeat === 'none') return
+      if (!groups.has(rec.repeatGroupId)) groups.set(rec.repeatGroupId, [])
+      groups.get(rec.repeatGroupId).push(rec)
+    })
+    groups.forEach((recs) => {
+      recs.sort((a, b) => (a.date < b.date ? -1 : 1))
+      const last = recs[recs.length - 1]
+      const futureCount = recs.filter((r) => !isDue(r)).length
+      // Still has plenty of upcoming dates — nothing to do.
+      if (futureCount > 0 && last.date >= soon) return
+      const existing = new Set(recs.map((r) => r.date))
+      const more = recurringDates({
+        date: last.date,
+        repeat: last.repeat,
+        weekDays: last.weekDays,
+        monthDay: last.monthDay,
+        customDays: last.customDays
+      }).filter((d) => d > last.date && !existing.has(d))
+      more.forEach((date) => {
+        const fresh = { ...last, id: '', date, createdAt: new Date().toISOString(), excepted: false, skipped: false }
+        list.push(kind === 'income' ? normalizeIncome(fresh) : normalizeExpense(fresh))
+        changed = true
+      })
+    })
+  }
+  extend(state.incomes, 'income')
+  extend(state.expenses, 'expense')
+  if (changed) save()
+}
+
+extendRecurringSeries()
+
 // ---------- lookups ----------
 
 function walletName(id) {
@@ -450,7 +505,7 @@ function monthItems(month) {
   return {
     incomes: state.incomes.filter((r) => inMonth(r.date) && isDue(r) && isActive(r)),
     expenses: state.expenses.filter((r) => inMonth(r.date) && isDue(r) && isActive(r)),
-    transfers: state.transfers.filter((r) => inMonth(r.date) && isDue(r) && transferCounts(r))
+    transfers: state.transfers.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && transferCounts(r))
   }
 }
 
@@ -485,11 +540,15 @@ function allTransactions() {
   const list = [
     ...state.incomes.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'income' })),
     ...state.expenses.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'expense' })),
-    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer' }))
+    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) }))
   ]
-  return list.sort((a, b) => a.date === b.date
-    ? String(b.time || '').localeCompare(String(a.time || ''))
-    : (a.date < b.date ? 1 : -1))
+  return list.sort((a, b) => {
+    const da = a.effDate || a.date
+    const db = b.effDate || b.date
+    return da === db
+      ? String(b.time || '').localeCompare(String(a.time || ''))
+      : (da < db ? 1 : -1)
+  })
 }
 
 function byDateTimeAsc(a, b) {
@@ -547,7 +606,7 @@ function nextScheduledAt() {
   const now = new Date()
   const pending = [...state.incomes, ...state.expenses, ...state.transfers]
     .filter((record) => transferCounts(record) && isActive(record) && !isDue(record))
-    .map((record) => new Date(`${record.date}T${record.time || '00:00'}:00`))
+    .map((record) => new Date(`${effectiveDate(record)}T${record.time || '00:00'}:00`))
     .filter((date) => Number.isFinite(date.getTime()) && date > now)
   const earliest = pending.reduce((timestamp, date) => Math.min(timestamp, date.getTime()), Infinity)
   return Number.isFinite(earliest) ? earliest : null
@@ -1038,11 +1097,49 @@ export const store = {
     save()
   },
   removeTransaction(kind, id) {
+    if (kind === 'transfer') {
+      state.transfers = state.transfers.filter((t) => t.id !== id)
+      save()
+      return
+    }
+    const list = kind === 'income' ? state.incomes : state.expenses
+    const target = list.find((r) => r.id === id)
+    const groupId = target && target.repeatGroupId ? target.repeatGroupId : ''
     if (kind === 'income') state.incomes = state.incomes.filter((r) => r.id !== id)
-    else if (kind === 'expense') state.expenses = state.expenses.filter((r) => r.id !== id)
-    else state.transfers = state.transfers.filter((t) => t.id !== id)
+    else state.expenses = state.expenses.filter((r) => r.id !== id)
+    // Removing the last upcoming occurrence of a series means the series is
+    // finished — mark it ended so the auto-top-up never resurrects it.
+    if (groupId) {
+      const remaining = (kind === 'income' ? state.incomes : state.expenses).filter((r) => r.repeatGroupId === groupId)
+      if (remaining.length && !remaining.some((r) => !isDue(r))) {
+        remaining.forEach((r) => { r.repeat = 'none' })
+      }
+    }
     save()
   },
+  // End a whole recurring series: drop every upcoming occurrence and keep the
+  // past ones (which already happened) as ordinary transactions.
+  endSeries(kind, groupId) {
+    const group = allScheduleGroups(kind).find((g) => g.id === groupId)
+    if (!group) return 0
+    const futureIds = new Set(group.future.map((r) => r.id))
+    const groupIds = new Set(group.records.map((r) => r.id))
+    const list = kind === 'income' ? state.incomes : state.expenses
+    let removed = 0
+    const kept = list.filter((r) => {
+      if (futureIds.has(r.id)) {
+        removed += 1
+        return false
+      }
+      if (groupIds.has(r.id)) r.repeat = 'none'
+      return true
+    })
+    if (kind === 'income') state.incomes = kept
+    else state.expenses = kept
+    save()
+    return removed
+  },
+  ensureRecurring: extendRecurringSeries,
 
   // Assets
   getAssets() {
@@ -1123,9 +1220,13 @@ export const store = {
       if (r.walletId === id && isDue(r) && isActive(r)) rows.push({ ...r, kind: 'expense' })
     })
     state.transfers.forEach((t) => {
-      if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out' })
+      if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out', effDate: effectiveDate(t) })
     })
-    return rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    return rows.sort((a, b) => {
+      const da = a.effDate || a.date
+      const db = b.effDate || b.date
+      return da === db ? 0 : (da < db ? 1 : -1)
+    })
   },
 
   // Formatting

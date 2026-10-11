@@ -115,7 +115,10 @@ function repeatingScheduleRow(schedule) {
       </div>
       <div class="repeat-actions">
         <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
-        <button class="mini-btn" type="button" data-action="open-schedule" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="Manage dates" title="Open calendar">${icon('cal')}</button>
+        <div class="row-actions">
+          <button class="mini-btn" type="button" data-action="open-schedule" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="Manage dates" title="Open calendar">${icon('cal')}</button>
+          <button class="mini-btn danger" type="button" data-action="end-series" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="End recurring series" title="End this recurring series">${icon('trash')}</button>
+        </div>
       </div>
     </article>
   `
@@ -167,6 +170,21 @@ function walletSelect(selected, name, required = true) {
     <option value="">${required ? 'Choose wallet…' : 'No wallet'}</option>
     ${store.getWallets().map((w) => `<option value="${w.id}" ${w.id === selected ? 'selected' : ''}>${escapeHtml(w.name)}</option>`).join('')}
   </select>`
+}
+
+// Which weekday boxes the weekly repeat panel should pre-check. Editing an
+// existing series uses its stored days; older records whose days were lost
+// (the boxes were never checked before) fall back to the occurrence's own
+// weekday so a plain save no longer wipes the schedule.
+function weeklyDaysFor(r) {
+  if (Array.isArray(r.weekDays) && r.weekDays.length) {
+    return r.weekDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  }
+  if (r.date && r.repeat === 'weekly') {
+    const dow = new Date(`${r.date}T00:00:00`).getDay()
+    return Number.isInteger(dow) ? [dow] : []
+  }
+  return []
 }
 
 // Modal kind -> state collection used for the edit lookup.
@@ -340,7 +358,7 @@ function txRow(tx) {
   } else {
     avatar = `<span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${money(tx.amount)}</div>`
   }
   return `
@@ -722,8 +740,16 @@ function shiftCal(delta) {
 
 function scheduleModalHtml() {
   const { kind, groupId } = modalPayload || {}
-  const records = (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || [])
-    .filter((r) => r.repeatGroupId === groupId)
+  // Legacy groups (auto-detected from imported data) have no repeatGroupId on
+  // their records, so look them up through the schedule API instead.
+  let records
+  if (String(groupId || '').startsWith('legacy-')) {
+    const group = store.getSchedule(kind, groupId)
+    records = group ? group.records : []
+  } else {
+    records = (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || [])
+      .filter((r) => r.repeatGroupId === groupId)
+  }
   const byDate = {}
   records.forEach((r) => { byDate[r.date] = r })
   if (!calMonth) calMonth = store.monthKey(store.todayISO())
@@ -849,6 +875,7 @@ function renderModal() {
     body = `<label>Source name<input name="name" required maxlength="60" value="${escapeHtml(s.name || '')}" placeholder="Salary" /></label>`
   } else if (modal === 'income') {
     const r = modalPayload || {}
+    const weeklyDays = weeklyDaysFor(r)
     title = `${isEdit ? 'Edit' : 'New'} income`
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Salary, refund…" /></label>
@@ -867,7 +894,7 @@ function renderModal() {
       </div>
       <div data-repeat-panel="weekly" style="display:none">
         <div class="muted tight" style="margin-bottom:4px">On these days:</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" style="width:auto" /> ${d}</label>`).join('')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" ${weeklyDays.includes(i) ? 'checked' : ''} style="width:auto" /> ${d}</label>`).join('')}</div>
       </div>
       <div data-repeat-panel="monthly" style="display:none">
         <label>Day of month<input name="monthDay" type="number" min="1" max="31" value="${r.monthDay || ''}" placeholder="Same as start date" /></label>
@@ -888,6 +915,7 @@ function renderModal() {
     `
   } else if (modal === 'expense') {
     const r = modalPayload || {}
+    const weeklyDays = weeklyDaysFor(r)
     title = `${isEdit ? 'Edit' : 'New'} expense`
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Groceries, rent…" /></label>
@@ -906,7 +934,7 @@ function renderModal() {
       </div>
       <div data-repeat-panel="weekly" style="display:none">
         <div class="muted tight" style="margin-bottom:4px">On these days:</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" style="width:auto" /> ${d}</label>`).join('')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" ${weeklyDays.includes(i) ? 'checked' : ''} style="width:auto" /> ${d}</label>`).join('')}</div>
       </div>
       <div data-repeat-panel="monthly" style="display:none">
         <label>Day of month<input name="monthDay" type="number" min="1" max="31" value="${r.monthDay || ''}" placeholder="Same as start date" /></label>
@@ -1179,9 +1207,20 @@ document.addEventListener('click', (event) => {
     store.removeTransaction(kind, actionEl.dataset.id)
     calSelected = null
     const groupId = modalPayload && modalPayload.groupId
-    const remaining = (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || []).filter((r) => r.repeatGroupId === groupId)
+    const remaining = String(groupId || '').startsWith('legacy-')
+      ? (store.getSchedule(kind, groupId) ? store.getSchedule(kind, groupId).records : [])
+      : (store.getState()[kind === 'income' ? 'incomes' : 'expenses'] || []).filter((r) => r.repeatGroupId === groupId)
     toast('Occurrence deleted')
     if (!remaining.length) { goBack(); return }
+    render()
+    return
+  }
+  if (action === 'end-series') {
+    const kind = actionEl.dataset.kind
+    const label = kind === 'income' ? 'income' : 'expense'
+    if (!window.confirm(`End this recurring ${label} series? Upcoming occurrences will be removed — past ones stay in your history.`)) return
+    const removed = store.endSeries(kind, actionEl.dataset.id)
+    toast(`Series ended · ${removed} upcoming occurrence${removed === 1 ? '' : 's'} removed`)
     render()
     return
   }
@@ -1229,14 +1268,15 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'release-pending') {
-    store.updateTransaction('transfer', actionEl.dataset.id, { pending: false })
+    store.updateTransaction('transfer', actionEl.dataset.id, { pending: false, releasedDate: store.todayISO() })
     toast('Transfer released')
     render()
     return
   }
   if (action === 'release-all-pending') {
     const waiting = store.getTransfers().filter((t) => t.pending)
-    waiting.forEach((t) => store.updateTransaction('transfer', t.id, { pending: false }))
+    const today = store.todayISO()
+    waiting.forEach((t) => store.updateTransaction('transfer', t.id, { pending: false, releasedDate: today }))
     toast(`Released ${waiting.length} transfer${waiting.length === 1 ? '' : 's'}`)
     render()
     return
@@ -1323,6 +1363,11 @@ document.addEventListener('submit', (event) => {
   } else if (type === 'income') {
     const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
+    if (fields.repeat === 'weekly' && !fields.weekDays.length) {
+      const existing = id ? store.findTransaction('income', id) : null
+      if (existing && Array.isArray(existing.weekDays) && existing.weekDays.length) fields.weekDays = existing.weekDays
+      else if (fields.date) fields.weekDays = [new Date(`${fields.date}T00:00:00`).getDay()]
+    }
     if (id && data.get('applySeries') === 'on') store.updateSeries('income', id, fields)
     else if (id) store.updateTransaction('income', id, fields)
     else store.addIncome(fields)
@@ -1330,6 +1375,11 @@ document.addEventListener('submit', (event) => {
   } else if (type === 'expense') {
     const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
+    if (fields.repeat === 'weekly' && !fields.weekDays.length) {
+      const existing = id ? store.findTransaction('expense', id) : null
+      if (existing && Array.isArray(existing.weekDays) && existing.weekDays.length) fields.weekDays = existing.weekDays
+      else if (fields.date) fields.weekDays = [new Date(`${fields.date}T00:00:00`).getDay()]
+    }
     if (id && data.get('applySeries') === 'on') store.updateSeries('expense', id, fields)
     else if (id) store.updateTransaction('expense', id, fields)
     else store.addExpense(fields)
@@ -1340,6 +1390,10 @@ document.addEventListener('submit', (event) => {
     if (!fromId || !toId || fromId === toId) { toast('Pick two different wallets'); return }
     const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note'), pending: data.get('pending') === 'on' }
     if (!fields.amount) { toast('Enter an amount'); return }
+    // Unticking "Pending" in the edit form releases the transfer — stamp the
+    // released date exactly like the Release button does.
+    const existingTransfer = id ? store.findTransaction('transfer', id) : null
+    if (existingTransfer && existingTransfer.pending && !fields.pending) fields.releasedDate = store.todayISO()
     if (id) store.updateTransaction('transfer', id, fields)
     else store.addTransfer(fields)
     toast(id ? 'Transfer updated' : (fields.pending ? 'Pending transfer added' : 'Transfer added'))
@@ -1375,6 +1429,17 @@ document.addEventListener('change', (event) => {
   }
   if (el && el.matches && el.matches('select[data-repeat]')) {
     syncRepeatPanels(el.value)
+    // Picking "Every week" with nothing ticked yet: tick the start date's own
+    // weekday so a weekly series is never created with an empty day set.
+    if (el.value === 'weekly') {
+      const boxes = Array.from(document.querySelectorAll('input[name="weekDay"]'))
+      if (boxes.length && !boxes.some((b) => b.checked)) {
+        const dateInput = document.querySelector('input[name="date"]')
+        const raw = dateInput && dateInput.value ? dateInput.value : store.todayISO()
+        const dow = new Date(`${raw}T00:00:00`).getDay()
+        boxes.forEach((b) => { b.checked = Number(b.value) === dow })
+      }
+    }
     return
   }
   if (el && el.id === 'csv-input') {
@@ -1443,7 +1508,10 @@ async function pickBackupLocation() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !modal) render()
+  if (!document.hidden && !modal) {
+    store.ensureRecurring()
+    render()
+  }
 })
 
 // ---------- boot ----------
