@@ -317,6 +317,21 @@ function normalizeDebt(debt) {
   }
 }
 
+// A goal is an optional monthly spending limit. It can watch every expense,
+// or only those hitting one wallet / one category. `strict` goals refuse the
+// expense entirely; soft goals just ask for confirmation.
+function normalizeGoal(goal) {
+  return {
+    id: goal.id || uid('g'),
+    name: str(goal.name, 60) || 'Monthly goal',
+    limit: Math.max(0, parseMoney(goal.limit)),
+    walletId: str(goal.walletId, 60),
+    categoryId: str(goal.categoryId, 60),
+    strict: goal.strict !== false,
+    createdAt: goal.createdAt || new Date().toISOString()
+  }
+}
+
 function defaultState() {
   return {
     version: 1,
@@ -324,6 +339,7 @@ function defaultState() {
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
     sources: DEFAULT_SOURCES.map((name) => normalizeSource({ name })),
+    goals: [],
     incomes: [],
     expenses: [],
     transfers: [],
@@ -347,6 +363,7 @@ function migrate(raw) {
   if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
   if (Array.isArray(raw.categories) && raw.categories.length) out.categories = raw.categories.map(normalizeCategory)
   if (Array.isArray(raw.sources) && raw.sources.length) out.sources = raw.sources.map(normalizeSource)
+  out.goals = Array.isArray(raw.goals) ? raw.goals.map(normalizeGoal) : []
   out.incomes = Array.isArray(raw.incomes) ? raw.incomes.map(normalizeIncome) : []
   out.expenses = Array.isArray(raw.expenses) ? raw.expenses.map(normalizeExpense) : []
   out.transfers = Array.isArray(raw.transfers) ? raw.transfers.map(normalizeTransfer) : []
@@ -534,6 +551,72 @@ function sourceTotals(month) {
     totals[r.sourceId] = (totals[r.sourceId] || 0) + r.amount
   })
   return totals
+}
+
+// ---------- goals ----------
+
+// Expenses that fall inside a goal's scope during `month`.
+function goalExpenses(goal, month) {
+  return state.expenses.filter((r) => {
+    if (monthKey(r.date) !== month || !isDue(r) || !isActive(r)) return false
+    if (goal.walletId && r.walletId !== goal.walletId) return false
+    if (goal.categoryId && r.categoryId !== goal.categoryId) return false
+    return true
+  })
+}
+
+function goalProgress(goal, month) {
+  const spent = goalExpenses(goal, month).reduce((sum, r) => sum + r.amount, 0)
+  const limit = Math.max(0, Number(goal.limit) || 0)
+  const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0
+  return {
+    spent,
+    limit,
+    pct,
+    remaining: Math.max(0, limit - spent),
+    over: Math.max(0, spent - limit),
+    hit: limit > 0 && spent >= limit
+  }
+}
+
+function goalScopeText(goal) {
+  const bits = []
+  bits.push(goal.walletId ? walletName(goal.walletId) : 'All wallets')
+  if (goal.categoryId) bits.push(categoryName(goal.categoryId))
+  return bits.join(' · ')
+}
+
+// Would saving this expense push any goal to (or past) its monthly limit?
+// Returns one entry per affected goal so the UI can explain each one.
+function goalsHitByExpense(fields, excludeTxId) {
+  const amount = Math.abs(parseMoney(fields && fields.amount))
+  if (!amount) return []
+  const start = isValidISO(fields && fields.date) ? fields.date : todayISO()
+  // Editing an existing record only re-checks its own date; a brand new
+  // recurring series is checked for every generated occurrence.
+  const dates = excludeTxId
+    ? [start]
+    : recurringDates({ ...fields, date: start })
+  const months = [...new Set(dates.map(monthKey))]
+  const hits = []
+  state.goals.forEach((goal) => {
+    if (!goal.limit) return
+    if (goal.walletId && goal.walletId !== str(fields && fields.walletId, 60)) return
+    if (goal.categoryId && goal.categoryId !== str(fields && fields.categoryId, 60)) return
+    let worst = null
+    months.forEach((m) => {
+      const spent = goalExpenses(goal, m)
+        .filter((r) => r.id !== excludeTxId)
+        .reduce((sum, r) => sum + r.amount, 0)
+      const next = spent + amount
+      if (next < goal.limit) return
+      if (!worst || next - goal.limit > worst.over) {
+        worst = { goal, month: m, spent, next, over: next - goal.limit, remaining: Math.max(0, goal.limit - spent) }
+      }
+    })
+    if (worst) hits.push(worst)
+  })
+  return hits
 }
 
 function allTransactions() {
@@ -1188,6 +1271,34 @@ export const store = {
     return { lent, collected, outstanding: Math.max(0, lent - collected) }
   },
 
+  // Goals (optional monthly spending limits)
+  getGoals(month) {
+    const target = monthKey(month || todayISO())
+    return state.goals.map((g) => ({ ...g, progress: goalProgress(g, target), scope: goalScopeText(g) }))
+  },
+  findGoal(id) {
+    return state.goals.find((g) => g.id === id) || null
+  },
+  goalProgress,
+  goalScopeText,
+  goalsHitByExpense,
+  addGoal(fields) {
+    const goal = normalizeGoal(fields)
+    state.goals.push(goal)
+    save()
+    return goal
+  },
+  updateGoal(id, fields) {
+    const goal = state.goals.find((g) => g.id === id)
+    if (!goal) return
+    Object.assign(goal, normalizeGoal({ ...goal, ...fields, id }))
+    save()
+  },
+  removeGoal(id) {
+    state.goals = state.goals.filter((g) => g.id !== id)
+    save()
+  },
+
   // Analytics
   monthSummary,
   categoryTotals,
@@ -1241,7 +1352,8 @@ export const store = {
       incomes: state.incomes.length,
       expenses: state.expenses.length,
       transfers: state.transfers.length,
-      categories: state.categories.length
+      categories: state.categories.length,
+      goals: state.goals.length
     }
   },
   exportBackup() {
@@ -1250,7 +1362,7 @@ export const store = {
   importBackup(payload) {
     const data = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload
     if (!data || typeof data !== 'object') return false
-    const allowed = ['wallets', 'categories', 'sources', 'incomes', 'expenses', 'transfers', 'assets', 'debts']
+    const allowed = ['wallets', 'categories', 'sources', 'goals', 'incomes', 'expenses', 'transfers', 'assets', 'debts']
     if (!allowed.some((key) => Array.isArray(data[key]))) return false
     state = migrate(data)
     save()

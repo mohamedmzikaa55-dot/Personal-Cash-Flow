@@ -133,7 +133,7 @@ function repeatingScheduleDisclosure(kind, label) {
         <span class="badge">${schedules.length} schedule${schedules.length === 1 ? '' : 's'}</span>
       </summary>
       <div class="list">
-        ${schedules.length ? schedules.map(repeatingScheduleRow).join('') : `<div class="empty">No repeated ${kind} scheduled.</div>`}
+        ${schedules.length ? schedules.map(repeatingScheduleRow).join('') : emptyState(`No repeated ${kind} scheduled.`, 'cal')}
       </div>
     </details>
   `
@@ -154,9 +154,19 @@ function icon(name) {
     transfer: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>',
     cal: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
     left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
-    right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
+    right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg>',
+    check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13l1.5 8v5a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-5z"/></svg>',
+    close: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'
   }
   return icons[name] || ''
+}
+
+// Friendly empty state with an optional icon so lists never look broken.
+function emptyState(text, iconName) {
+  return `<div class="empty">${iconName ? `<span class="empty-ico">${icon(iconName)}</span>` : ''}<span>${escapeHtml(text)}</span></div>`
 }
 
 function shiftMonth(delta) {
@@ -194,6 +204,7 @@ const COLLECTIONS = {
   source: 'sources',
   asset: 'assets',
   debt: 'debts',
+  goal: 'goals',
   income: 'incomes',
   expense: 'expenses',
   transfer: 'transfers'
@@ -233,7 +244,6 @@ function renderDashboard() {
       </div>
       <button class="ghost-btn compact" data-screen="more">Settings</button>
     </div>
-
     <section class="hero">
       <div class="hero-top">
         <div>
@@ -253,13 +263,15 @@ function renderDashboard() {
 
     ${renderTrend()}
 
+    ${renderGoalsCompact()}
+
     <section class="section">
       <div class="section-head">
         <h2>Wallets</h2>
         <button class="ghost-btn compact" data-screen="wallets">View all</button>
       </div>
       <div class="list">
-        ${wallets.length ? wallets.map(walletRow).join('') : '<div class="empty">No wallets yet. Add one from the Wallets tab.</div>'}
+        ${wallets.length ? wallets.slice(0, 4).map(walletRow).join('') : emptyState('No wallets yet. Add one from the Wallets tab.', 'wallet')}
       </div>
     </section>
 
@@ -274,7 +286,7 @@ function renderDashboard() {
         <h2>Recent activity</h2>
         <button class="ghost-btn compact" data-screen="activity">View all</button>
       </div>
-      <div class="list">${recent.length ? recent.map(txRow).join('') : '<div class="empty">No transactions yet. Tap + to add income, an expense or a transfer.</div>'}</div>
+      <div class="list">${recent.length ? recent.map(txRow).join('') : emptyState('No transactions yet. Tap + to add income, an expense or a transfer.', 'inbox')}</div>
     </section>
   `
 }
@@ -400,7 +412,7 @@ function renderTransactions() {
         <p class="kicker">Cash flow</p>
         <h1>Activity</h1>
       </div>
-      ${monthNav()}
+      <div class="topbar-actions">${monthNav()}</div>
     </div>
 
     <section class="hero" style="padding:14px">
@@ -418,7 +430,7 @@ function renderTransactions() {
     </div>
 
     <div class="list">
-      ${list.length ? list.map(txRow).join('') : `<div class="empty">No ${txFilter === 'all' ? '' : txFilter + ' '}transactions this period.</div>`}
+      ${list.length ? list.map(txRow).join('') : emptyState(`No ${txFilter === 'all' ? '' : txFilter + ' '}transactions this period.`, 'inbox')}
     </div>
 
     ${pendingTransfers.length ? `
@@ -445,6 +457,79 @@ function monthNav() {
   `
 }
 
+// ---------- goals ----------
+
+function goalCard(goal) {
+  const p = goal.progress
+  const pct = p.limit > 0 ? Math.min(100, Math.round((p.spent / p.limit) * 100)) : 0
+  const level = p.over > 0 ? 'over' : p.hit ? 'warn' : 'ok'
+  const status = p.over > 0
+    ? `${money(p.over)} over limit`
+    : p.hit
+      ? 'Limit reached'
+      : `${money(p.remaining)} left`
+  return `
+    <article class="goal-card ${level}">
+      <div class="goal-top">
+        <span class="avatar goal-ico">${icon('target')}</span>
+        <div class="body">
+          <div class="title">${escapeHtml(goal.name)}</div>
+          <div class="meta">${escapeHtml(goal.scope || 'All wallets')} · ${goal.strict ? 'Blocks when full' : 'Warns when full'}</div>
+        </div>
+        <div class="row-actions">
+          <button class="mini-btn" data-action="edit-goal" data-id="${goal.id}" title="Edit goal" aria-label="Edit goal">${icon('edit')}</button>
+          <button class="mini-btn danger" data-action="delete-goal" data-id="${goal.id}" title="Delete goal" aria-label="Delete goal">${icon('trash')}</button>
+        </div>
+      </div>
+      <div class="goal-figures">
+        <span class="goal-spent mono">${money(p.spent)} <span class="muted">of ${money(p.limit)}</span></span>
+        <span class="goal-status">${status}</span>
+      </div>
+      <div class="bar"><span class="${level === 'over' ? 'over' : level === 'warn' ? 'warn' : ''}" style="width:${pct}%"></span></div>
+    </article>
+  `
+}
+
+function renderGoalsSection() {
+  const goals = store.getGoals(month)
+  const over = goals.filter((g) => g.progress.over > 0).length
+  const near = goals.filter((g) => g.progress.hit && g.progress.over === 0).length
+  const alertBits = []
+  if (over) alertBits.push(`${over} over the limit`)
+  if (near) alertBits.push(`${near} at the limit`)
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2>${icon('target')} Goals</h2>
+        <div class="head-actions">
+          <span class="item-meta">${escapeHtml(store.monthLabel(month))}</span>
+          <button class="ghost-btn compact" data-action="new-goal">+ Add</button>
+        </div>
+      </div>
+      <p class="muted tight" style="margin:-2px 0 10px">Optional monthly limits — an expense that would pass a goal's limit is blocked, or asks first.</p>
+      <div class="list">
+        ${goals.length ? goals.map(goalCard).join('') : emptyState('No goals yet. Add a monthly limit to keep spending in check.', 'target')}
+      </div>
+      ${alertBits.length ? `<p class="goal-alert">${icon('warn')}<span>${alertBits.join(' · ')}</span></p>` : ''}
+    </section>
+  `
+}
+
+function renderGoalsCompact() {
+  const goals = store.getGoals(month)
+  if (!goals.length) return ''
+  const top = goals.slice(0, 2)
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2>${icon('target')} Monthly goals</h2>
+        <button class="ghost-btn compact" data-screen="wallets">Manage</button>
+      </div>
+      <div class="list">${top.map(goalCard).join('')}</div>
+    </section>
+  `
+}
+
 function renderWallets() {
   const wallets = store.getWallets()
   const total = wallets.reduce((sum, w) => sum + w.current, 0)
@@ -454,27 +539,29 @@ function renderWallets() {
         <p class="kicker">Accounts</p>
         <h1>Wallets</h1>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="topbar-actions">
         <span class="pill">${money(total)}</span>
         <button class="ghost-btn compact" data-action="new-wallet">+ Add wallet</button>
       </div>
     </div>
     <div class="list">
-      ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : '<div class="empty">No wallets yet. Tap + to add one.</div>'}
+      ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : emptyState('No wallets yet. Tap + to add one.', 'wallet')}
     </div>
+    ${renderGoalsSection()}
   `
 }
 
 function walletDetailRow(wallet) {
-  const income = store.getIncomes().filter((r) => r.walletId === wallet.id && store.isDue(r)).reduce((s, r) => s + r.amount, 0)
-  const expense = store.getExpenses().filter((r) => r.walletId === wallet.id && store.isDue(r)).reduce((s, r) => s + r.amount, 0)
+  const monthTx = store.walletTransactions(wallet.id).filter((r) => store.monthKey(r.date) === month)
+  const income = monthTx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
+  const expense = monthTx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
   return `
     <article class="item" style="align-items:start" data-action="open-wallet" data-id="${wallet.id}">
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
         <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}</div>
-        <div class="meta" style="margin-top:6px">Opening ${money(wallet.opening)} · in ${money(income)} · out ${money(expense)}</div>
+        <div class="meta" style="margin-top:6px">Opening ${money(wallet.opening)} · this month in ${money(income)} · out ${money(expense)}</div>
       </div>
       <div style="display:grid;gap:8px;justify-items:end">
         <div class="amount ${wallet.current < 0 ? 'neg' : ''} mono">${money(wallet.current)}</div>
@@ -499,6 +586,7 @@ function renderWalletDetail() {
   const expense = tx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
   const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in' && store.transferCounts(r)).reduce((s, r) => s + r.amount, 0)
   const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out' && store.transferCounts(r)).reduce((s, r) => s + r.amount + (r.fee || 0), 0)
+  const walletGoals = store.getGoals(month).filter((g) => g.walletId === wallet.id)
   return `
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
@@ -527,10 +615,16 @@ function renderWalletDetail() {
       </div>
     </section>
 
+    ${walletGoals.length ? `
+    <section class="section">
+      <div class="section-head"><h2>${icon('target')} Goals on this wallet</h2></div>
+      <div class="list">${walletGoals.map(goalCard).join('')}</div>
+    </section>` : ''}
+
     <section class="section">
       <div class="section-head"><h2>Activity</h2><span class="item-meta">${tx.length} item${tx.length === 1 ? '' : 's'}</span></div>
       <div class="list">
-        ${tx.length ? tx.map(txRow).join('') : '<div class="empty">No transactions for this wallet yet.</div>'}
+        ${tx.length ? tx.map(txRow).join('') : emptyState('No transactions for this wallet yet.', 'inbox')}
       </div>
     </section>
   `
@@ -550,7 +644,7 @@ function renderBudgets() {
         <p class="kicker">Planning</p>
         <h1>Budgets</h1>
       </div>
-      ${monthNav()}
+      <div class="topbar-actions">${monthNav()}</div>
     </div>
 
     <section class="hero" style="padding:16px">
@@ -655,7 +749,7 @@ function renderMore() {
             </div>
             <div class="amount mono">${a.sold ? money(a.sellingPrice) : money(a.buyingPrice)}</div>
           </article>
-        `).join('') : '<div class="empty">No assets tracked.</div>'}
+        `).join('') : emptyState('No assets tracked.', 'inbox')}
       </div>
     </section>
 
@@ -672,7 +766,7 @@ function renderMore() {
             </div>
             <div class="amount ${d.direction === 'Collect' ? 'pos' : 'neg'} mono">${money(d.amount)}</div>
           </article>
-        `).join('') : '<div class="empty">No debts tracked.</div>'}
+        `).join('') : emptyState('No debts tracked.', 'inbox')}
       </div>
     </section>
 
@@ -826,11 +920,35 @@ function renderModal() {
         <div class="sheet">
           <div class="handle"></div>
           <h2>Add to cash flow</h2>
-          <div class="form">
-            <button class="ghost-btn" data-action="open-income">＋ Income — money in</button>
-            <button class="ghost-btn" data-action="open-expense">－ Expense — money out</button>
-            <button class="ghost-btn" data-action="open-transfer">⇄ Transfer — move between wallets</button>
-            <button class="ghost-btn" data-action="open-wallet-new">▣ Wallet — add an account</button>
+          <p class="muted tight" style="margin-top:4px">Pick what you want to record.</p>
+          <div class="choose-list">
+            <button class="choose-item" data-action="open-income">
+              <span class="avatar" style="background:var(--green)">${icon('up')}</span>
+              <span class="choose-body"><b>Income</b><span class="muted">Money coming in</span></span>
+              ${icon('right')}
+            </button>
+            <button class="choose-item" data-action="open-expense">
+              <span class="avatar" style="background:var(--red)">${icon('down')}</span>
+              <span class="choose-body"><b>Expense</b><span class="muted">Money going out</span></span>
+              ${icon('right')}
+            </button>
+            <button class="choose-item" data-action="open-transfer">
+              <span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>
+              <span class="choose-body"><b>Transfer</b><span class="muted">Move between wallets</span></span>
+              ${icon('right')}
+            </button>
+            <button class="choose-item" data-action="open-wallet-new">
+              <span class="avatar" style="background:var(--gold)">${icon('wallet')}</span>
+              <span class="choose-body"><b>Wallet</b><span class="muted">Add an account</span></span>
+              ${icon('right')}
+            </button>
+            <button class="choose-item" data-action="new-goal">
+              <span class="avatar" style="background:var(--gold)">${icon('target')}</span>
+              <span class="choose-body"><b>Goal</b><span class="muted">A monthly spending limit</span></span>
+              ${icon('right')}
+            </button>
+          </div>
+          <div class="form-actions">
             <button class="ghost-btn" type="button" data-action="close-modal">Cancel</button>
           </div>
         </div>
@@ -873,6 +991,33 @@ function renderModal() {
     const s = modalPayload || {}
     title = `${isEdit ? 'Edit' : 'New'} income source`
     body = `<label>Source name<input name="name" required maxlength="60" value="${escapeHtml(s.name || '')}" placeholder="Salary" /></label>`
+  } else if (modal === 'goal') {
+    const g = modalPayload || {}
+    title = `${isEdit ? 'Edit' : 'New'} monthly goal`
+    body = `
+      <p class="muted tight">A goal caps how much you can spend in one month. Leave wallet &amp; category empty to watch everything.</p>
+      <label>Goal name<input name="name" required maxlength="60" value="${escapeHtml(g.name || '')}" placeholder="Monthly spending cap…" /></label>
+      <label>Monthly limit<input name="limit" type="number" step="0.01" min="0.01" required value="${g.limit ? Number(g.limit) : ''}" placeholder="0.00" /></label>
+      <div class="row2">
+        <label>Watch wallet<select name="walletId">
+          <option value="">All wallets</option>
+          ${store.getWallets().map((w) => `<option value="${w.id}" ${w.id === g.walletId ? 'selected' : ''}>${escapeHtml(w.name)}</option>`).join('')}
+        </select></label>
+        <label>Watch category<select name="categoryId">
+          <option value="">All spending</option>
+          ${store.getCategories().map((c) => `<option value="${c.id}" ${c.id === g.categoryId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select></label>
+      </div>
+      <div class="seg-field">
+        <span class="seg-label">When the limit is reached</span>
+        <div class="chip-row segmented">
+          <button type="button" class="chip ${g.strict === false ? '' : 'on'}" data-action="goal-mode" data-value="block">Block the expense</button>
+          <button type="button" class="chip ${g.strict === false ? 'on' : ''}" data-action="goal-mode" data-value="warn">Ask me first</button>
+        </div>
+        <input type="hidden" name="strict" value="${g.strict === false ? 'warn' : 'block'}" />
+        <p class="muted tight" id="goal-mode-hint">${g.strict === false ? 'A matching expense asks for confirmation before it is saved.' : 'A matching expense is refused while the goal is full.'}</p>
+      </div>
+    `
   } else if (modal === 'income') {
     const r = modalPayload || {}
     const weeklyDays = weeklyDaysFor(r)
@@ -1012,7 +1157,8 @@ function renderModal() {
     expense: 'delete-transaction',
     transfer: 'delete-transaction',
     asset: 'delete-asset',
-    debt: 'delete-debt'
+    debt: 'delete-debt',
+    goal: 'delete-goal'
   }
   const deleteAction = isEdit ? deleteActions[modal] : ''
 
@@ -1048,7 +1194,7 @@ function render() {
         ${screen === 'budgets' ? renderBudgets() : ''}
         ${screen === 'more' ? renderMore() : ''}
       </main>
-      ${showFab ? '<button class="fab" data-action="open-add" aria-label="Add">+</button>' : ''}
+      ${showFab ? `<button class="fab" data-action="open-add" aria-label="Add income, expense, transfer or wallet">${icon('plus')}</button>` : ''}
       <nav class="tabbar">
         ${[
           ['home', 'Home', 'home'],
@@ -1056,7 +1202,7 @@ function render() {
           ['wallets', 'Wallets', 'wallet'],
           ['budgets', 'Budgets', 'chart'],
           ['more', 'More', 'more']
-        ].map(([key, label, ico]) => `<button class="tab ${screen === key ? 'active' : ''}" data-screen="${key}">${icon(ico)}<span>${label}</span></button>`).join('')}
+        ].map(([key, label, ico]) => `<button class="tab ${screen === key ? 'active' : ''}" data-screen="${key}" ${screen === key ? 'aria-current="page"' : ''}>${icon(ico)}<span>${label}</span></button>`).join('')}
       </nav>
     </div>
     ${renderModal()}
@@ -1106,6 +1252,7 @@ document.addEventListener('click', (event) => {
   if (screenBtn) {
     screen = screenBtn.dataset.screen
     if (screen !== 'wallets') walletDetail = null
+    window.scrollTo({ top: 0 })
     render()
     return
   }
@@ -1127,6 +1274,18 @@ document.addEventListener('click', (event) => {
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
+  if (action === 'goal-mode') {
+    const wrap = actionEl.closest('.seg-field')
+    if (!wrap) return
+    wrap.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === actionEl))
+    const hidden = wrap.querySelector('input[name="strict"]')
+    const hint = wrap.querySelector('#goal-mode-hint')
+    if (hidden) hidden.value = actionEl.dataset.value
+    if (hint) hint.textContent = actionEl.dataset.value === 'warn'
+      ? 'A matching expense asks for confirmation before it is saved.'
+      : 'A matching expense is refused while the goal is full.'
+    return
+  }
   if (action === 'refresh-rate') {
     store.refreshRate().then((res) => { toast(res.ok ? 'Rate updated' : (res.reason || 'Could not update')); render() })
     return
@@ -1150,12 +1309,14 @@ document.addEventListener('click', (event) => {
     'new-category': 'category', 'edit-category': 'category',
     'new-source': 'source', 'edit-source': 'source',
     'new-asset': 'asset', 'edit-asset': 'asset',
-    'new-debt': 'debt', 'edit-debt': 'debt'
+    'new-debt': 'debt', 'edit-debt': 'debt',
+    'new-goal': 'goal', 'edit-goal': 'goal'
   }
   if (opens[action]) {
     const kind = opens[action]
     const id = actionEl.dataset.id
-    openModal(kind, id ? (findRecord(kind, id) || {}) : {})
+    // Opening from the "+" sheet replaces it so Back does not stack sheets.
+    openModal(kind, id ? (findRecord(kind, id) || {}) : {}, modal === 'choose')
     return
   }
 
@@ -1244,6 +1405,14 @@ document.addEventListener('click', (event) => {
     store.removeSource(actionEl.dataset.id)
     toast('Source deleted')
     render()
+    return
+  }
+  if (action === 'delete-goal') {
+    if (!window.confirm('Delete this goal? Your spending will no longer be limited.')) return
+    store.removeGoal(actionEl.dataset.id)
+    toast('Goal deleted')
+    if (modal) goBack()
+    else render()
     return
   }
   if (action === 'delete-upcoming-repeat') {
@@ -1360,6 +1529,13 @@ document.addEventListener('submit', (event) => {
     if (id) store.updateSource(id, fields)
     else store.addSource(fields)
     toast(id ? 'Source updated' : 'Source added')
+  } else if (type === 'goal') {
+    const fields = { name: get('name'), limit: num('limit'), walletId: get('walletId'), categoryId: get('categoryId'), strict: get('strict') !== 'warn' }
+    if (!fields.name) return
+    if (!fields.limit) { toast('Enter a monthly limit'); return }
+    if (id) store.updateGoal(id, fields)
+    else store.addGoal(fields)
+    toast(id ? 'Goal updated' : 'Goal added')
   } else if (type === 'income') {
     const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
     if (!fields.amount) { toast('Enter an amount'); return }
@@ -1379,6 +1555,21 @@ document.addEventListener('submit', (event) => {
       const existing = id ? store.findTransaction('expense', id) : null
       if (existing && Array.isArray(existing.weekDays) && existing.weekDays.length) fields.weekDays = existing.weekDays
       else if (fields.date) fields.weekDays = [new Date(`${fields.date}T00:00:00`).getDay()]
+    }
+    // Monthly goals: a strict goal refuses the expense outright; a soft goal
+    // asks for confirmation before it is saved.
+    const hits = store.goalsHitByExpense(fields, id || '')
+    if (hits.length) {
+      const lines = hits.map((h) => `• ${h.goal.name}: ${money(h.next)} of ${money(h.goal.limit)}${store.monthLabel(h.month) ? ` in ${store.monthLabel(h.month)}` : ''}`).join('\n')
+      if (hits.some((h) => h.goal.strict)) {
+        window.alert(`Blocked by a monthly goal:\n\n${lines}\n\nRaise the goal's limit, lower this expense, or change the goal to "Ask me first".`)
+        toast('Expense blocked by goal limit')
+        return
+      }
+      if (!window.confirm(`This expense reaches a monthly goal limit:\n\n${lines}\n\nAdd it anyway?`)) {
+        toast('Expense not saved')
+        return
+      }
     }
     if (id && data.get('applySeries') === 'on') store.updateSeries('expense', id, fields)
     else if (id) store.updateTransaction('expense', id, fields)
