@@ -1,5 +1,9 @@
 ﻿// Personal Cash Flow - offline shell.
-const VERSION = 'pcf-v12'
+// Bump VERSION with every release: browsers only install a new service worker
+// when this file's bytes change, and the shell files below are served
+// cache-first from VERSION — so without a bump, "Check for update" compares
+// identical bytes, finds nothing, and keeps serving the cached old files.
+const VERSION = 'pcf-v13'
 const CORE = [
   './',
   './index.html',
@@ -46,6 +50,14 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => caches.match(event.request, { ignoreSearch: true }).then((hit) => hit || caches.match('./index.html')))
     )
+    return
+  }
+
+  // The worker script is fetched by the page right before an update check to
+  // bust the HTTP cache, so it must never be served from — or stored in — this
+  // cache, or the check would keep comparing the old bytes.
+  if (url.pathname.endsWith('/sw.js')) {
+    event.respondWith(fetch(event.request))
     return
   }
 

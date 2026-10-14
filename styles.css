@@ -152,6 +152,24 @@ button {
   flex-wrap: wrap;
 }
 
+/* Screens whose actions row carries the month pager keep everything on one
+   line: a long month label used to wrap the pager under the page title. */
+.topbar-inline {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-inline > div:first-child {
+  flex: 0 0 auto;
+}
+
+.topbar-inline .topbar-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
 .kicker {
   margin: 0 0 4px;
   color: var(--gold);
@@ -331,6 +349,85 @@ h2 svg {
   font-size: 20px;
   display: grid;
   place-items: center;
+}
+
+/* Compact arrows used by the month pager. */
+.icon-btn.sm {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 13px;
+}
+
+.icon-btn.sm svg {
+  width: 18px;
+  height: 18px;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.month-nav-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- search / filter controls ---------- */
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-field > svg {
+  position: absolute;
+  left: 13px;
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-field input {
+  padding-left: 38px;
+  padding-right: 38px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 7px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--muted);
+  display: none;
+  place-items: center;
+}
+
+/* Shown only while the field holds text — plain CSS keeps it in sync with
+   typing even though the rest of the page is not re-rendered. */
+.search-field input:not(:placeholder-shown) ~ .search-clear {
+  display: grid;
+}
+
+.search-clear:hover {
+  color: var(--text);
+}
+
+.search-clear svg {
+  width: 13px;
+  height: 13px;
 }
 
 .icon-btn svg {
@@ -826,6 +923,102 @@ h2 svg {
 
 .goal-add-btn:active {
   transform: scale(0.985);
+}
+
+/* ---------- breakdown charts ---------- */
+.chart-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.donut-card {
+  display: grid;
+  gap: 12px;
+}
+
+.donut-title {
+  grid-column: 1 / -1;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.donut-wrap {
+  position: relative;
+  width: 158px;
+  margin: 0 auto;
+}
+
+.donut {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.donut-center b {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.donut-center span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chart-legend {
+  display: grid;
+  gap: 7px;
+}
+
+.legend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.legend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-val {
+  font-weight: 700;
+}
+
+.legend-pct {
+  min-width: 34px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Phone: ring above the legend. Wider shell: ring beside it. */
+@media (min-width: 560px) {
+  .donut-card {
+    grid-template-columns: 158px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 16px;
+  }
 }
 
 /* ---------- fab ---------- */

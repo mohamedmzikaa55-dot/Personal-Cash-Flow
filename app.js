@@ -11,6 +11,13 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); defe
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
 let txPeriod = 'month'
+// Activity list: free-text search, sort order and the optional wallet filter.
+let txSearch = ''
+let txSort = 'date-desc'
+let txWallet = ''
+// Budgets breakdown charts: 'month' or 'year' — Year makes the topbar arrows
+// step twelve months at a time, like the Activity screen's year view.
+let chartPeriod = 'month'
 // Budgets screen: when on, every category / income source row shows its
 // edit & delete controls instead of hiding them behind the edit form.
 let budgetEdit = false
@@ -164,7 +171,8 @@ function icon(name) {
     warn: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13l1.5 8v5a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-5z"/></svg>',
-    close: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+    close: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>'
   }
   return icons[name] || ''
 }
@@ -182,7 +190,10 @@ function shiftMonth(delta) {
 
 // On Activity with the Year filter the arrows step a year at a time.
 function monthStep() {
-  return screen === 'activity' && txPeriod === 'year' ? 12 : 1
+  if (screen === 'activity' && txPeriod === 'year') return 12
+  // Budgets breakdown charts in year mode step the topbar pager by a year too.
+  if (screen === 'budgets' && chartPeriod === 'year') return 12
+  return 1
 }
 
 function walletSelect(selected, name, required = true) {
@@ -448,22 +459,121 @@ function periodWord(period) {
   return 'this month'
 }
 
-function renderTransactions() {
-  const all = store.getTransactions()
+// ---------- activity filtering / sorting ----------
+
+const TX_SORTS = [
+  ['date-desc', 'Date: newest first'],
+  ['date-asc', 'Date: oldest first'],
+  ['amount-desc', 'Amount: high to low'],
+  ['amount-asc', 'Amount: low to high']
+]
+
+// Free-text search covers the description, its category / income source, the
+// wallets involved, the kind, the date and the amount.
+function txHaystack(t) {
+  const bits = [t.name, t.kind]
+  if (t.kind === 'income') bits.push(store.sourceName(t.sourceId))
+  if (t.kind === 'expense') bits.push(store.categoryName(t.categoryId))
+  if (t.kind === 'transfer') bits.push(store.walletName(t.fromId), store.walletName(t.toId))
+  bits.push(store.walletName(t.walletId), t.effDate || t.date, String(t.amount))
+  return bits.filter(Boolean).join(' ').toLowerCase()
+}
+
+// Transactions matching the active period, kind, wallet and search — already
+// sorted in the chosen order.
+function visibleTransactions() {
   const range = periodRange(txPeriod)
-  const inPeriod = all.filter((t) => {
+  const q = txSearch.trim().toLowerCase()
+  const list = store.getTransactions().filter((t) => {
+    const d = t.effDate || t.date
+    if (d < range.from || d > range.to) return false
+    if (txFilter !== 'all' && t.kind !== txFilter) return false
+    if (txWallet) {
+      const ids = t.kind === 'transfer' ? [t.fromId, t.toId] : [t.walletId]
+      if (!ids.includes(txWallet)) return false
+    }
+    if (q && !txHaystack(t).includes(q)) return false
+    return true
+  })
+  const amount = (t) => Math.abs(Number(t.amount) || 0)
+  const dateOf = (t) => t.effDate || t.date
+  const byDateDesc = (a, b) => (dateOf(a) === dateOf(b)
+    ? String(b.time || '').localeCompare(String(a.time || ''))
+    : (dateOf(a) < dateOf(b) ? 1 : -1))
+  const byDateAsc = (a, b) => (dateOf(a) === dateOf(b)
+    ? String(a.time || '').localeCompare(String(b.time || ''))
+    : (dateOf(a) < dateOf(b) ? -1 : 1))
+  const comparators = {
+    'date-asc': byDateAsc,
+    'amount-desc': (a, b) => amount(b) - amount(a) || byDateDesc(a, b),
+    'amount-asc': (a, b) => amount(a) - amount(b) || byDateDesc(a, b)
+  }
+  return list.sort(comparators[txSort] || byDateDesc)
+}
+
+function sortOptions() {
+  return TX_SORTS.map(([value, label]) =>
+    `<option value="${value}" ${txSort === value ? 'selected' : ''}>${label}</option>`).join('')
+}
+
+function walletFilterOptions() {
+  const list = store.getWallets().map((w) =>
+    `<option value="${w.id}" ${txWallet === w.id ? 'selected' : ''}>${escapeHtml(w.name)}</option>`).join('')
+  return `<option value="" ${txWallet ? '' : 'selected'}>All wallets</option>${list}`
+}
+
+// Period label + income / expense / net for whatever the list currently shows.
+function txSummaryHtml() {
+  const range = periodRange(txPeriod)
+  const inPeriod = store.getTransactions().filter((t) => {
     const d = t.effDate || t.date
     return d >= range.from && d <= range.to
   })
-  const list = txFilter === 'all' ? inPeriod : inPeriod.filter((t) => t.kind === txFilter)
-  const pendingTransfers = store.getTransfers().filter((t) => t.pending)
-  const income = inPeriod.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0)
-  const expense = inPeriod.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0)
+  const list = visibleTransactions()
+  const income = list.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0)
+  const expense = list.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0)
   const net = income - expense
+  const count = list.length === inPeriod.length
+    ? `${inPeriod.length} transaction${inPeriod.length === 1 ? '' : 's'}`
+    : `${list.length} of ${inPeriod.length} transactions`
+  return `
+    <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${count}</p>
+    <div class="stat-grid" style="margin-top:0">
+      <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
+      <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
+      <div class="stat"><span class="muted">Net</span><b class="${net >= 0 ? 'pos' : 'neg'} mono">${money(net)}</b></div>
+    </div>
+  `
+}
+
+function txListHtml() {
+  const list = visibleTransactions()
+  if (!list.length) {
+    const q = txSearch.trim()
+    const reason = q
+      ? `No transactions match "${q.length > 40 ? `${q.slice(0, 40)}…` : q}".`
+      : `No ${txFilter === 'all' ? '' : `${txFilter} `}transactions ${periodWord(txPeriod)}${txWallet ? ' in this wallet' : ''}.`
+    return emptyState(reason, 'inbox')
+  }
+  return list.map(txRow).join('')
+}
+
+// Live search / sort / wallet changes only swap the results in place, so the
+// text field never loses focus or its caret.
+function patchTxView() {
+  const summary = document.getElementById('tx-results')
+  if (summary) summary.innerHTML = txSummaryHtml()
+  const list = document.getElementById('tx-list')
+  if (list) list.innerHTML = txListHtml()
+}
+
+function renderTransactions() {
+  const pendingTransfers = store.getTransfers().filter((t) => t.pending)
   const showsMonthNav = txPeriod === 'month' || txPeriod === 'year'
   const periodChips = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']]
+  const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']]
   return `
-    <div class="topbar">
+    <div class="topbar topbar-inline">
       <div>
         <p class="kicker">Cash flow</p>
         <h1>Activity</h1>
@@ -474,29 +584,33 @@ function renderTransactions() {
     </div>
 
     <section class="hero" style="padding:14px">
-      <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${inPeriod.length} transaction${inPeriod.length === 1 ? '' : 's'}</p>
-      <div class="stat-grid" style="margin-top:0">
-        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
-        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
-        <div class="stat"><span class="muted">Net</span><b class="${net >= 0 ? 'pos' : 'neg'} mono">${money(net)}</b></div>
-      </div>
+      <div id="tx-results">${txSummaryHtml()}</div>
     </section>
 
     <div class="filter-bar">
+      <div class="search-field">
+        ${icon('search')}
+        <input id="tx-search" type="text" placeholder="Search description, category, wallet, amount…" value="${escapeHtml(txSearch)}" autocomplete="off" />
+        <button class="search-clear" type="button" data-action="clear-search" aria-label="Clear search" tabindex="-1">${icon('close')}</button>
+      </div>
       <div class="chip-row segmented">
         ${periodChips.map(([value, label]) =>
           `<button class="chip ${txPeriod === value ? 'on' : ''}" data-action="set-period" data-period="${value}">${label}</button>`
         ).join('')}
       </div>
       <div class="chip-row">
-        ${[['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']].map(([value, label]) =>
+        ${kindChips.map(([value, label]) =>
           `<button class="chip ${txFilter === value ? 'on' : ''}" data-action="set-filter" data-filter="${value}">${label}</button>`
         ).join('')}
       </div>
+      <div class="row2">
+        <label>Sort by<select id="tx-sort">${sortOptions()}</select></label>
+        <label>Wallet<select id="tx-wallet">${walletFilterOptions()}</select></label>
+      </div>
     </div>
 
-    <div class="list">
-      ${list.length ? list.map(txRow).join('') : emptyState(`No ${txFilter === 'all' ? '' : txFilter + ' '}transactions ${periodWord(txPeriod)}.`, 'inbox')}
+    <div class="list" id="tx-list">
+      ${txListHtml()}
     </div>
 
     ${pendingTransfers.length ? `
@@ -513,12 +627,22 @@ function renderTransactions() {
   `
 }
 
+// Short pager caption. The full "November 2026" made the month row too wide
+// for a phone topbar, so it wrapped underneath the page title; the full label
+// still shows in the hero and section headers.
+function monthNavLabel() {
+  if (monthStep() === 12) return month.slice(0, 4)
+  const d = new Date(`${month}-01T00:00:00`)
+  if (Number.isNaN(d.getTime())) return store.monthLabel(month)
+  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+}
+
 function monthNav() {
   return `
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <button class="icon-btn" data-action="month-prev" aria-label="Previous month">${icon('left')}</button>
-      <button class="ghost-btn compact" data-action="month-now" style="min-width:112px;flex:0 1 auto">${escapeHtml(store.monthLabel(month))}</button>
-      <button class="icon-btn" data-action="month-next" aria-label="Next month">${icon('right')}</button>
+    <div class="month-nav">
+      <button class="icon-btn sm" data-action="month-prev" aria-label="Previous month">${icon('left')}</button>
+      <button class="ghost-btn compact month-nav-label" data-action="month-now" title="${escapeHtml(monthStep() === 12 ? `Jump to ${month.slice(0, 4)}` : store.monthLabel(month))}">${escapeHtml(monthNavLabel())}</button>
+      <button class="icon-btn sm" data-action="month-next" aria-label="Next month">${icon('right')}</button>
     </div>
   `
 }
@@ -709,6 +833,112 @@ function renderWalletDetail() {
   `
 }
 
+// ---------- breakdown charts ----------
+
+// Income sources carry no colour of their own, so give the donut a fixed set.
+const SOURCE_COLORS = ['#6ea8ff', '#f4b942', '#3ddc84', '#a06bff', '#22b07d', '#f472b6', '#38bdf8', '#fb923c', '#a3e635', '#e879f9', '#f87171', '#60a5fa', '#e8a51c', '#14b8a6']
+
+// Month or year totals keyed by category (expenses) or source (income).
+function breakdownTotals(kind, period) {
+  const { from, to } = periodRange(period)
+  const wanted = kind === 'expense' ? 'expense' : 'income'
+  const totals = new Map()
+  store.getTransactions().forEach((t) => {
+    if (t.kind !== wanted) return
+    const d = t.effDate || t.date
+    if (d < from || d > to) return
+    const key = wanted === 'expense' ? (t.categoryId || '') : (t.sourceId || '')
+    totals.set(key, (totals.get(key) || 0) + t.amount)
+  })
+  return totals
+}
+
+function breakdownItems(kind, period) {
+  const totals = breakdownTotals(kind, period)
+  const records = kind === 'expense' ? store.getCategories() : store.getSources()
+  const items = [...totals.entries()].map(([id, value], i) => {
+    const rec = records.find((r) => r.id === id)
+    return {
+      id,
+      label: rec ? rec.name : (kind === 'expense' ? 'Uncategorised' : 'Unassigned'),
+      value,
+      color: kind === 'expense' ? (rec ? rec.color : 'var(--muted)') : SOURCE_COLORS[i % SOURCE_COLORS.length]
+    }
+  })
+  return items.sort((a, b) => b.value - a.value)
+}
+
+// Short caption shown inside the ring: "Nov 2026" for a month, "2026" a year.
+function chartRangeLabel(period) {
+  if (period === 'year') return month.slice(0, 4)
+  const d = new Date(`${month}-01T00:00:00`)
+  if (Number.isNaN(d.getTime())) return store.monthLabel(month)
+  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+}
+
+function donutChart(items) {
+  const total = items.reduce((s, it) => s + it.value, 0)
+  const radius = 42
+  const circumference = 2 * Math.PI * radius
+  let offset = 0
+  const segments = items.map((it) => {
+    const len = total > 0 ? (it.value / total) * circumference : 0
+    const seg = `<circle cx="50" cy="50" r="${radius}" fill="none" stroke-width="15" style="stroke:${it.color}" stroke-dasharray="${len.toFixed(2)} ${(circumference - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 50 50)" />`
+    offset += len
+    return seg
+  }).join('')
+  const range = chartRangeLabel(chartPeriod)
+  return `
+    <div class="donut-wrap">
+      <svg class="donut" viewBox="0 0 100 100" role="img" aria-label="${escapeHtml(`${money(total)} in ${range}`)}">
+        <circle cx="50" cy="50" r="${radius}" fill="none" style="stroke:var(--card-2)" stroke-width="15" />
+        ${segments}
+      </svg>
+      <div class="donut-center">
+        <b class="mono">${money(total)}</b>
+        <span>${escapeHtml(range)}</span>
+      </div>
+    </div>
+  `
+}
+
+function donutLegend(items, total) {
+  const rows = items.slice(0, 8).map((it) => `
+    <div class="legend-row">
+      <span class="legend-dot" style="background:${it.color}"></span>
+      <span class="legend-name" title="${escapeHtml(it.label)}">${escapeHtml(it.label)}</span>
+      <span class="legend-val mono">${money(it.value)}</span>
+      <span class="legend-pct">${total > 0 ? Math.round((it.value / total) * 100) : 0}%</span>
+    </div>
+  `)
+  const rest = items.slice(8)
+  if (rest.length) {
+    const restTotal = rest.reduce((s, it) => s + it.value, 0)
+    rows.push(`
+      <div class="legend-row muted">
+        <span class="legend-dot" style="background:var(--card-2)"></span>
+        <span class="legend-name">Other (${rest.length})</span>
+        <span class="legend-val mono">${money(restTotal)}</span>
+        <span class="legend-pct">${total > 0 ? Math.round((restTotal / total) * 100) : 0}%</span>
+      </div>
+    `)
+  }
+  return `<div class="chart-legend">${rows.join('')}</div>`
+}
+
+function breakdownCard(kind, title) {
+  const items = breakdownItems(kind, chartPeriod)
+  const total = items.reduce((s, it) => s + it.value, 0)
+  const range = chartRangeLabel(chartPeriod)
+  return `
+    <div class="card donut-card">
+      <h3 class="donut-title">${escapeHtml(title)}</h3>
+      ${items.length ? `${donutChart(items)}${donutLegend(items, total)}`
+        : `<p class="muted tight">No ${kind === 'expense' ? 'spending' : 'income'} recorded in ${escapeHtml(range)}.</p>`}
+    </div>
+  `
+}
+
 // How many past expenses / incomes still point at this category or source,
 // so the delete prompt can say exactly what will survive the deletion.
 function categoryUsage(id) {
@@ -724,11 +954,9 @@ function renderBudgets() {
   const categories = store.getCategories().map((c) => ({ ...c, spent: catTotals[c.id] || 0 }))
   const spent = categories.reduce((s, c) => s + c.spent, 0)
   const budget = categories.reduce((s, c) => s + c.budget, 0)
-  const sourceTotals = store.sourceTotals(month)
-  const sources = store.getSources().map((s) => ({ ...s, total: sourceTotals[s.id] || 0 })).filter((s) => s.total > 0)
 
   return `
-    <div class="topbar">
+    <div class="topbar topbar-inline">
       <div>
         <p class="kicker">Planning</p>
         <h1>Budgets</h1>
@@ -750,6 +978,20 @@ function renderBudgets() {
 
     <section class="section">
       <div class="section-head">
+        <h2>${icon('chart')} Breakdown</h2>
+        <div class="chip-row segmented">
+          <button class="chip ${chartPeriod === 'month' ? 'on' : ''}" type="button" data-action="chart-period" data-value="month">Month</button>
+          <button class="chip ${chartPeriod === 'year' ? 'on' : ''}" type="button" data-action="chart-period" data-value="year">Year</button>
+        </div>
+      </div>
+      <div class="chart-grid">
+        ${breakdownCard('expense', 'Spending by category')}
+        ${breakdownCard('income', 'Income by source')}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
         <h2>Categories</h2>
         <button class="ghost-btn compact" data-action="new-category">+ Add</button>
       </div>
@@ -766,20 +1008,6 @@ function renderBudgets() {
         `).join('')}
       </div>
     </section>
-
-    ${sources.length ? `
-    <section class="section">
-      <div class="section-head"><h2>Income by source</h2></div>
-      <div class="list">
-        ${sources.map((s) => `
-          <div class="item">
-            <span class="avatar" style="background:var(--blue)">${icon('up')}</span>
-            <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
-            <div class="amount pos mono">${money(s.total)}</div>
-          </div>
-        `).join('')}
-      </div>
-    </section>` : ''}
 
     <section class="section">
       <div class="section-head"><h2>Income sources</h2><button class="ghost-btn compact" data-action="new-source">+ Add</button></div>
@@ -1308,6 +1536,12 @@ function render() {
   document.body.classList.toggle('modal-open', Boolean(modal))
   const repeatSel = document.querySelector('select[data-repeat]')
   if (repeatSel) syncRepeatPanels(repeatSel.value)
+  // Live search patches only the results, so the field keeps its caret.
+  const searchInput = document.getElementById('tx-search')
+  if (searchInput) searchInput.addEventListener('input', (event) => {
+    txSearch = event.target.value || ''
+    patchTxView()
+  })
   scheduleDueRefresh()
 }
 
@@ -1372,6 +1606,8 @@ document.addEventListener('click', (event) => {
   if (action === 'toggle-budget-edit') { budgetEdit = !budgetEdit; render(); return }
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
   if (action === 'set-period') { txPeriod = actionEl.dataset.period || 'month'; render(); return }
+  if (action === 'clear-search') { txSearch = ''; render(); return }
+  if (action === 'chart-period') { chartPeriod = actionEl.dataset.value === 'year' ? 'year' : 'month'; render(); return }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
@@ -1392,14 +1628,28 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'check-update') {
-    if (!swReg) { toast('Updates not supported here'); return }
+    if (!('serviceWorker' in navigator)) { toast('Updates are not supported in this browser'); return }
     toast('Checking for updates…')
-    swReg.update().then(() => {
-      setTimeout(() => {
-        if (swReg.waiting) applyUpdate(swReg.waiting)
-        else toast('App is up to date')
-      }, 1500)
-    }).catch(() => toast('Could not check for updates'))
+    bustSwScript()
+      // Register on demand so the button still works when the load-time
+      // registration has not resolved yet (or failed).
+      .then(() => (swReg ? swReg.update() : navigator.serviceWorker.register('./sw.js')))
+      .then((reg) => {
+        if (reg && typeof reg.update === 'function') swReg = reg
+        if (!swReg) { toast('Could not check for updates'); return }
+        // A worker is waiting (already downloaded) or still downloading — either
+        // way there is something new to hand over.
+        if (swReg.waiting) { applyUpdate(swReg.waiting); return }
+        if (swReg.installing) {
+          toast('Downloading the new version…')
+          whenWorkerInstalled(swReg.installing, () => {
+            applyUpdate(swReg.waiting || swReg.installing)
+          }, () => toast('Update failed — try again in a moment'))
+          return
+        }
+        toast('App is up to date')
+      })
+      .catch(() => toast('Could not check for updates'))
     return
   }
 
@@ -1725,6 +1975,16 @@ document.addEventListener('submit', (event) => {
 
 document.addEventListener('change', (event) => {
   const el = event.target
+  if (el && el.id === 'tx-sort') {
+    txSort = TX_SORTS.some(([value]) => value === el.value) ? el.value : 'date-desc'
+    patchTxView()
+    return
+  }
+  if (el && el.id === 'tx-wallet') {
+    txWallet = el.value || ''
+    patchTxView()
+    return
+  }
   if (el && el.id === 'main-currency') {
     store.setMainCurrency(el.value)
     store.refreshRate().then((res) => { if (res.ok) toast('Rate updated'); render() })
@@ -1835,6 +2095,10 @@ render()
 })()
 
 let swReg = null
+// Set once an update has reloaded the page, so the safety-net timer below does
+// not trigger a second reload.
+let updateReloaded = false
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').then((reg) => {
@@ -1851,22 +2115,74 @@ if ('serviceWorker' in navigator) {
       })
     }).catch(() => {})
 
-    let refreshing = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (refreshing) return
-      refreshing = true
+      if (updateReloaded) return
+      updateReloaded = true
+      // A new worker took over: reload so the page runs the new files.
       window.location.reload()
     })
   })
 }
 
-// Export a safety backup, then let the waiting service worker take over.
+// Re-fetch sw.js bypassing the HTTP cache. Without this a cached copy can be
+// served to the update check, which then compares identical bytes and reports
+// "App is up to date" even though a new release is on the server.
+function bustSwScript() {
+  try {
+    return fetch('./sw.js', { cache: 'reload' }).then(() => undefined, () => undefined)
+  } catch {
+    return Promise.resolve()
+  }
+}
+
+// Resolve once a worker finishes installing (or fails). The update check can
+// find a new worker that is still downloading the app files, and reporting
+// "up to date" at that point is what made updates look broken.
+function whenWorkerInstalled(worker, done, onFail) {
+  if (!worker) { done(); return }
+  if (worker.state === 'installed' || worker.state === 'activated') { done(); return }
+  let settled = false
+  const onChange = () => {
+    if (settled) return
+    if (worker.state === 'installed' || worker.state === 'activated') {
+      settled = true
+      worker.removeEventListener('statechange', onChange)
+      done()
+    } else if (worker.state === 'redundant') {
+      settled = true
+      worker.removeEventListener('statechange', onChange)
+      if (onFail) onFail()
+    }
+  }
+  worker.addEventListener('statechange', onChange)
+}
+
+// Export a safety backup, then let the fresh service worker take over. Once it
+// activates it claims the page, and that reloads the app onto the new files.
 function applyUpdate(worker) {
   try {
     downloadBackup(`personal-cash-flow-autobackup-${store.todayISO()}.json`)
     toast('Backup exported before update')
   } catch {}
-  try { worker.postMessage({ type: 'SKIP_WAITING' }) } catch {}
+  let asked = false
+  const activate = () => {
+    if (asked) return
+    asked = true
+    try { worker.postMessage({ type: 'SKIP_WAITING' }) } catch {}
+  }
+  // skipWaiting() is accepted while the worker installs, so a worker that has
+  // only just been found can still be nudged straight away — one that is still
+  // downloading gets the nudge once it settles.
+  if (worker.state === 'installing') {
+    whenWorkerInstalled(worker, activate, () => toast('Update failed — nothing changed'))
+  } else {
+    activate()
+  }
+  // Safety net: if the new worker never claims this page, reload anyway — by
+  // then it is active and serves the fresh files.
+  setTimeout(() => {
+    if (!updateReloaded) window.location.reload()
+  }, 3000)
 }
 
 const bootError = document.getElementById('boot-error')
