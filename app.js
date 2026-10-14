@@ -11,6 +11,9 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); defe
 let month = store.monthKey(store.todayISO())
 let txFilter = 'all'
 let txPeriod = 'month'
+// Budgets screen: when on, every category / income source row shows its
+// edit & delete controls instead of hiding them behind the edit form.
+let budgetEdit = false
 let dueRefreshTimer = null
 let calMonth = null
 let calSelected = null
@@ -706,6 +709,16 @@ function renderWalletDetail() {
   `
 }
 
+// How many past expenses / incomes still point at this category or source,
+// so the delete prompt can say exactly what will survive the deletion.
+function categoryUsage(id) {
+  return store.getTransactions().filter((t) => t.kind === 'expense' && t.categoryId === id).length
+}
+
+function sourceUsage(id) {
+  return store.getTransactions().filter((t) => t.kind === 'income' && t.sourceId === id).length
+}
+
 function renderBudgets() {
   const catTotals = store.categoryTotals(month)
   const categories = store.getCategories().map((c) => ({ ...c, spent: catTotals[c.id] || 0 }))
@@ -720,8 +733,13 @@ function renderBudgets() {
         <p class="kicker">Planning</p>
         <h1>Budgets</h1>
       </div>
-      <div class="topbar-actions">${monthNav()}</div>
+      <div class="topbar-actions">
+        <button class="chip edit-toggle ${budgetEdit ? 'on' : ''}" type="button" data-action="toggle-budget-edit" aria-pressed="${budgetEdit ? 'true' : 'false'}">${budgetEdit ? icon('check') : icon('edit')}<span>${budgetEdit ? 'Done' : 'Edit'}</span></button>
+        ${monthNav()}
+      </div>
     </div>
+
+    ${budgetEdit ? `<p class="muted tight" style="margin:-6px 0 14px">Edit mode — edit or delete a category or income source straight from its row. Deleting keeps past transactions in your history.</p>` : ''}
 
     <section class="hero" style="padding:16px">
       <span class="label">Spent this month</span>
@@ -737,8 +755,13 @@ function renderBudgets() {
       </div>
       <div class="list">
         ${categories.map((c) => `
-          <article data-action="edit-category" data-id="${c.id}" style="cursor:pointer">
+          <article class="budget-cat" data-action="edit-category" data-id="${c.id}">
             ${budgetBar(c)}
+            ${budgetEdit ? `
+              <div class="row-actions">
+                <button class="mini-btn" type="button" data-action="edit-category" data-id="${c.id}" title="Edit category" aria-label="Edit ${escapeHtml(c.name)}">${icon('edit')}</button>
+                <button class="mini-btn danger" type="button" data-action="delete-category" data-id="${c.id}" data-count="${categoryUsage(c.id)}" title="Delete category" aria-label="Delete ${escapeHtml(c.name)}">${icon('trash')}</button>
+              </div>` : ''}
           </article>
         `).join('')}
       </div>
@@ -765,10 +788,11 @@ function renderBudgets() {
           <article class="item" data-action="edit-source" data-id="${s.id}">
             <span class="avatar" style="background:var(--blue)">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
             <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
-            <div style="display:flex;gap:6px">
-              <button class="mini-btn" data-action="edit-source" data-id="${s.id}">${icon('edit')}</button>
-              <button class="mini-btn danger" data-action="delete-source" data-id="${s.id}">${icon('trash')}</button>
-            </div>
+            ${budgetEdit ? `
+              <div class="row-actions">
+                <button class="mini-btn" type="button" data-action="edit-source" data-id="${s.id}" title="Edit source" aria-label="Edit ${escapeHtml(s.name)}">${icon('edit')}</button>
+                <button class="mini-btn danger" type="button" data-action="delete-source" data-id="${s.id}" data-count="${sourceUsage(s.id)}" title="Delete source" aria-label="Delete ${escapeHtml(s.name)}">${icon('trash')}</button>
+              </div>` : ''}
           </article>
         `).join('')}
       </div>
@@ -1325,6 +1349,8 @@ document.addEventListener('click', (event) => {
   if (screenBtn) {
     screen = screenBtn.dataset.screen
     if (screen !== 'wallets') walletDetail = null
+    // Edit mode only makes sense while the Budgets screen is open.
+    if (screen !== 'budgets') budgetEdit = false
     window.scrollTo({ top: 0 })
     render()
     return
@@ -1343,6 +1369,7 @@ document.addEventListener('click', (event) => {
   if (action === 'month-prev') { shiftMonth(monthStep() * -1); render(); return }
   if (action === 'month-next') { shiftMonth(monthStep()); render(); return }
   if (action === 'month-now') { month = store.monthKey(store.todayISO()); render(); return }
+  if (action === 'toggle-budget-edit') { budgetEdit = !budgetEdit; render(); return }
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
   if (action === 'set-period') { txPeriod = actionEl.dataset.period || 'month'; render(); return }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
@@ -1460,10 +1487,20 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'delete-category') {
-    if (!window.confirm('Delete this category? Its expenses become uncategorised.')) return
-    store.removeCategory(actionEl.dataset.id)
+    // Expenses keep pointing at their category, so deleting is always safe:
+    // they simply fall back to "Uncategorised" in the history.
+    const id = actionEl.dataset.id
+    const cat = store.findCategory(id)
+    const name = cat ? cat.name : 'this category'
+    const count = Number(actionEl.dataset.count) || categoryUsage(id)
+    const detail = count > 0
+      ? `\n\nIts ${count} expense${count === 1 ? '' : 's'} stay in your history as uncategorised.`
+      : ''
+    if (!window.confirm(`Delete "${name}"?${detail}`)) return
+    store.removeCategory(id)
     toast('Category deleted')
-    goBack()
+    if (modal) goBack()
+    else render()
     return
   }
   if (action === 'delete-wallet') {
@@ -1475,8 +1512,14 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'delete-source') {
-    if (!window.confirm('Delete this income source?')) return
-    store.removeSource(actionEl.dataset.id)
+    const id = actionEl.dataset.id
+    const name = store.sourceName(id) || 'this income source'
+    const count = Number(actionEl.dataset.count) || sourceUsage(id)
+    const detail = count > 0
+      ? `\n\nIts ${count} income record${count === 1 ? '' : 's'} stay in your history as plain income.`
+      : ''
+    if (!window.confirm(`Delete "${name}"?${detail}`)) return
+    store.removeSource(id)
     toast('Source deleted')
     render()
     return

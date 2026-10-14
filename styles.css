@@ -367,6 +367,29 @@ h2 svg {
   flex-wrap: wrap;
 }
 
+/* Edit-mode switch at the top of the Budgets screen. */
+.chip.edit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.chip.edit-toggle svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.budget-cat {
+  cursor: pointer;
+}
+
+.budget-cat > .row-actions {
+  margin-top: 2px;
+  justify-content: flex-end;
+}
+
 .filter-bar {
   display: grid;
   gap: 8px;
