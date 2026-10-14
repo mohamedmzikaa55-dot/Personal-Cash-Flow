@@ -317,9 +317,18 @@ function normalizeDebt(debt) {
   }
 }
 
+// A goal with no month applies to every month; otherwise it is pinned to a
+// single YYYY-MM key and only counts expenses inside that month.
+function normalizeGoalMonth(value) {
+  const raw = str(value, 7)
+  if (!/^\d{4}-\d{2}$/.test(raw)) return ''
+  return Number(raw.slice(5)) >= 1 && Number(raw.slice(5)) <= 12 ? raw : ''
+}
+
 // A goal is an optional monthly spending limit. It can watch every expense,
 // or only those hitting one wallet / one category. `strict` goals refuse the
-// expense entirely; soft goals just ask for confirmation.
+// expense entirely; soft goals just ask for confirmation. `month` pins the goal
+// to one month — empty means "every month".
 function normalizeGoal(goal) {
   return {
     id: goal.id || uid('g'),
@@ -327,6 +336,7 @@ function normalizeGoal(goal) {
     limit: Math.max(0, parseMoney(goal.limit)),
     walletId: str(goal.walletId, 60),
     categoryId: str(goal.categoryId, 60),
+    month: normalizeGoalMonth(goal.month),
     strict: goal.strict !== false,
     createdAt: goal.createdAt || new Date().toISOString()
   }
@@ -1274,7 +1284,11 @@ export const store = {
   // Goals (optional monthly spending limits)
   getGoals(month) {
     const target = monthKey(month || todayISO())
-    return state.goals.map((g) => ({ ...g, progress: goalProgress(g, target), scope: goalScopeText(g) }))
+    // Goals pinned to another month stay out of this view; goals without a
+    // month are shown everywhere.
+    return state.goals
+      .filter((g) => !g.month || g.month === target)
+      .map((g) => ({ ...g, progress: goalProgress(g, target), scope: goalScopeText(g) }))
   },
   findGoal(id) {
     return state.goals.find((g) => g.id === id) || null

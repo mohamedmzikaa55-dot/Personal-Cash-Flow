@@ -522,6 +522,19 @@ function monthNav() {
 
 // ---------- goals ----------
 
+// Months a goal can be pinned to: "Every month" plus a two-year window around
+// the current month, so a one-off budget is as easy to set as a standing one.
+function goalMonthOptions(selected) {
+  const [y, m] = store.monthKey(store.todayISO()).split('-').map(Number)
+  const options = [`<option value="" ${selected ? '' : 'selected'}>Every month</option>`]
+  for (let i = -12; i <= 11; i += 1) {
+    const d = new Date(y, m - 1 + i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    options.push(`<option value="${key}" ${key === selected ? 'selected' : ''}>${escapeHtml(store.monthLabel(key))}</option>`)
+  }
+  return options.join('')
+}
+
 function goalCard(goal) {
   const p = goal.progress
   const pct = p.limit > 0 ? Math.min(100, Math.round((p.spent / p.limit) * 100)) : 0
@@ -536,7 +549,7 @@ function goalCard(goal) {
       <div class="goal-top">
         <span class="avatar goal-ico">${icon('target')}</span>
         <div class="body">
-          <div class="title">${escapeHtml(goal.name)}</div>
+          <div class="title">${escapeHtml(goal.name)}${goal.month ? ` <span class="badge gold" title="This goal only counts spending in ${escapeHtml(store.monthLabel(goal.month))}">${escapeHtml(store.monthLabel(goal.month))} only</span>` : ''}</div>
           <div class="meta">${escapeHtml(goal.scope || 'All wallets')} · ${goal.strict ? 'Blocks when full' : 'Warns when full'}</div>
         </div>
         <div class="row-actions">
@@ -566,13 +579,13 @@ function renderGoalsSection() {
         <h2>${icon('target')} Goals</h2>
         <div class="head-actions">
           <span class="item-meta">${escapeHtml(store.monthLabel(month))}</span>
-          <button class="ghost-btn compact" data-action="new-goal">+ Add</button>
         </div>
       </div>
       <p class="muted tight" style="margin:-2px 0 10px">Optional monthly limits — an expense that would pass a goal's limit is blocked, or asks first.</p>
       <div class="list">
-        ${goals.length ? goals.map(goalCard).join('') : emptyState('No goals yet. Add a monthly limit to keep spending in check.', 'target')}
+        ${goals.length ? goals.map(goalCard).join('') : emptyState(`No goals for ${escapeHtml(store.monthLabel(month))}. Add a monthly limit to keep spending in check.`, 'target')}
       </div>
+      <button class="goal-add-btn" type="button" data-action="new-goal">${icon('plus')}<span>New goal</span></button>
       ${alertBits.length ? `<p class="goal-alert">${icon('warn')}<span>${alertBits.join(' · ')}</span></p>` : ''}
     </section>
   `
@@ -1056,6 +1069,8 @@ function renderModal() {
       <p class="muted tight">A goal caps how much you can spend in one month. Leave wallet &amp; category empty to watch everything.</p>
       <label>Goal name<input name="name" required maxlength="60" value="${escapeHtml(g.name || '')}" placeholder="Monthly spending cap…" /></label>
       <label>Monthly limit<input name="limit" type="number" step="0.01" min="0.01" required value="${g.limit ? Number(g.limit) : ''}" placeholder="0.00" /></label>
+      <label>Applies to<select name="month">${goalMonthOptions(g.month)}</select></label>
+      <p class="muted tight" style="margin-top:-6px">Pick “Every month” to keep this limit running all the time, or a single month for a one-off budget.</p>
       <div class="row2">
         <label>Watch wallet<select name="walletId">
           <option value="">All wallets</option>
@@ -1589,7 +1604,7 @@ document.addEventListener('submit', (event) => {
     else store.addSource(fields)
     toast(id ? 'Source updated' : 'Source added')
   } else if (type === 'goal') {
-    const fields = { name: get('name'), limit: num('limit'), walletId: get('walletId'), categoryId: get('categoryId'), strict: get('strict') !== 'warn' }
+    const fields = { name: get('name'), limit: num('limit'), walletId: get('walletId'), categoryId: get('categoryId'), strict: get('strict') !== 'warn', month: get('month') }
     if (!fields.name) return
     if (!fields.limit) { toast('Enter a monthly limit'); return }
     if (id) store.updateGoal(id, fields)
