@@ -224,7 +224,13 @@ function icon(name) {
     check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13l1.5 8v5a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-5z"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>'
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>',
+    // Wallet / account type glyphs used by the wallet cards.
+    cash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg>',
+    card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/></svg>',
+    bank: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9"/><path d="M3 20h18"/></svg>',
+    safe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="12" cy="12" r="3.4"/><path d="M12 5.5v3M12 15.5v3"/></svg>',
+    chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
   }
   return icons[name] || ''
 }
@@ -326,10 +332,20 @@ function renderDashboard() {
         </div>
         <span class="pill ${summary.net >= 0 ? 'pos' : 'neg'}">${summary.net >= 0 ? '▲' : '▼'} ${money(summary.net)}</span>
       </div>
-      <div class="stat-grid">
-        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(summary.income)}</b></div>
-        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(summary.expense)}</b></div>
-        <div class="stat"><span class="muted">Save rate</span><b class="${summary.rate >= 0 ? 'pos' : 'neg'}">${summary.rate}%</b></div>
+      <div class="hero-tiles">
+        <div class="tile income">
+          <span class="tile-label">${icon('up')} Income</span>
+          <span class="tile-figure mono">${money(summary.income)}</span>
+        </div>
+        <div class="tile expense">
+          <span class="tile-label">${icon('down')} Expense</span>
+          <span class="tile-figure mono">${money(summary.expense)}</span>
+        </div>
+        <div class="tile rate">
+          <span class="tile-label">Save rate</span>
+          <span class="ring" style="--p:${Math.max(0, Math.min(100, summary.rate))}%"><span>${summary.rate}%</span></span>
+          <span class="tile-figure">${money(summary.net)} kept</span>
+        </div>
       </div>
       <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}</p>
       ${walletsTotalsLine(totals)}
@@ -365,10 +381,48 @@ function renderDashboard() {
   `
 }
 
+// Wallet colours: the palette the app already assigns to categories, so every
+// wallet card in the list gets its own tile colour like the showcase.
+const WALLET_COLORS = [
+  '#35d997', '#6ea8ff', '#a78bfa', '#ff8a5c', '#f2b73d',
+  '#f472b6', '#38bdf8', '#fb923c', '#a3e635', '#f87171', '#2dd4bf'
+]
+
+// Stable per wallet name, so a restored backup keeps the same colours.
+function walletColor(wallet) {
+  const key = String((wallet && (wallet.name || wallet.id)) || '')
+  let sum = 0
+  for (let i = 0; i < key.length; i += 1) sum = (sum + key.charCodeAt(i) * (i + 1)) % 9973
+  return WALLET_COLORS[sum % WALLET_COLORS.length]
+}
+
+// Soft tint of a hex colour, for the tile behind the wallet glyph.
+function softColor(hex, alpha) {
+  const raw = String(hex || '').replace('#', '')
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw
+  const num = Number.parseInt(full.slice(0, 6), 16)
+  if (!Number.isFinite(num)) return 'var(--accent-soft)'
+  return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha == null ? 0.16 : alpha})`
+}
+
+// Glyph for the wallet's type, falling back to the generic wallet icon.
+function walletTypeIcon(wallet) {
+  const type = String(wallet && wallet.type || '')
+  if (type === 'Safe') return icon('safe')
+  if (type === 'Digital Wallet') return icon('card')
+  return icon('cash')
+}
+
+function walletCardStyle(wallet) {
+  const color = walletColor(wallet)
+  return `--wc:${color};--wc-soft:${softColor(color)}`
+}
+
 function walletAvatar(wallet) {
-  const initial = escapeHtml((wallet.name || '?').trim().charAt(0).toUpperCase())
-  const color = wallet.status === 'Freezed' ? 'var(--muted)' : 'var(--gold)'
-  return `<span class="avatar" style="background:${color}">${initial}</span>`
+  const frozen = wallet.status === 'Freezed'
+  const color = frozen ? 'var(--muted)' : walletColor(wallet)
+  const background = frozen ? 'var(--card-2)' : softColor(color)
+  return `<span class="avatar ${frozen ? 'frozen' : ''}" style="background:${background};color:${color}">${walletTypeIcon(wallet)}</span>`
 }
 
 // Explain what a wallet's second-currency balance is worth in the main
@@ -498,11 +552,13 @@ function renderTrend() {
 function budgetBar(category) {
   const pct = category.budget > 0 ? Math.round((category.spent / category.budget) * 100) : 0
   const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
+  const pctCls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
   return `
     <div class="budget-row">
       <div class="top">
-        <span>${escapeHtml(category.name)}</span>
+        <span><span class="cat-tile" style="background:${softColor(category.color)};color:${escapeHtml(category.color)}">${escapeHtml((category.name || '?').trim().charAt(0).toUpperCase())}</span>${escapeHtml(category.name)}</span>
         <span class="mono"><b>${money(category.spent)}</b> <span class="muted">/ ${money(category.budget)}</span></span>
+        <span class="pct ${pctCls}">${pct}%</span>
       </div>
       <div class="bar"><span class="${cls}" style="width:${Math.min(100, pct)}%"></span></div>
       <div class="muted" style="font-size:11.5px">${pct}% used · ${money(Math.max(0, category.budget - category.spent))} left</div>
@@ -516,17 +572,17 @@ function txRow(tx) {
   let meta = ''
   let amount = ''
   if (tx.kind === 'income') {
-    avatar = `<span class="avatar" style="background:var(--green)">${icon('up')}</span>`
+    avatar = `<span class="avatar income">${icon('up')}</span>`
     title = escapeHtml(tx.name)
     meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount pos mono">+${money(tx.amount)}</div>`
   } else if (tx.kind === 'expense') {
-    avatar = `<span class="avatar" style="background:var(--red)">${icon('down')}</span>`
+    avatar = `<span class="avatar expense">${icon('down')}</span>`
     title = escapeHtml(tx.name)
     meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount neg mono">-${money(tx.amount)}</div>`
   } else {
-    avatar = `<span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>`
+    avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${money(tx.amount)}</div>`
@@ -546,7 +602,7 @@ function txRow(tx) {
 function pendingTransferRow(tx) {
   return `
     <article class="item">
-      <span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>
+      <span class="avatar transfer">${icon('transfer')}</span>
       <div class="body">
         <div class="title">${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')}</div>
         <div class="meta">${money(tx.amount)}${tx.fee ? ` + fee ${money(tx.fee)}` : ''} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}</div>
@@ -675,10 +731,19 @@ function txSummaryHtml() {
     : `${list.length} of ${inPeriod.length} transactions`
   return `
     <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${count}</p>
-    <div class="stat-grid" style="margin-top:0">
-      <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
-      <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
-      <div class="stat"><span class="muted">Net</span><b class="${net >= 0 ? 'pos' : 'neg'} mono">${money(net)}</b></div>
+    <div class="hero-tiles" style="margin-top:0">
+      <div class="tile income">
+        <span class="tile-label">${icon('up')} Income</span>
+        <span class="tile-figure mono">${money(income)}</span>
+      </div>
+      <div class="tile expense">
+        <span class="tile-label">${icon('down')} Expense</span>
+        <span class="tile-figure mono">${money(expense)}</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Net</span>
+        <span class="tile-figure mono ${net >= 0 ? '' : 'neg'}">${money(net)}</span>
+      </div>
     </div>
   `
 }
@@ -823,7 +888,10 @@ function goalCard(goal) {
       </div>
       <div class="goal-figures">
         <span class="goal-spent mono">${money(p.spent)} <span class="muted">of ${money(p.limit)}</span></span>
-        <span class="goal-status">${status}</span>
+        <span class="goal-right">
+          <span class="goal-pct">${pct}%</span>
+          <span class="goal-status">${status}</span>
+        </span>
       </div>
       <div class="bar"><span class="${level === 'over' ? 'over' : level === 'warn' ? 'warn' : ''}" style="width:${pct}%"></span></div>
     </article>
@@ -881,11 +949,20 @@ function renderWallets() {
         <h1>Wallets</h1>
       </div>
       <div class="topbar-actions">
-        <span class="pill">${money(total)}</span>
         <button class="ghost-btn compact" data-action="new-wallet">+ Add wallet</button>
       </div>
     </div>
-    ${walletsTotalsLine(totals)}
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <span class="label">Total balance</span>
+          <div class="value mono">${money(total)}</div>
+          <div class="sub">${wallets.length} wallet${wallets.length === 1 ? '' : 's'} · spendable ${money(wallets.reduce((sum, w) => sum + store.walletSpendable(w.id), 0))}</div>
+        </div>
+        <span class="pill ${total >= 0 ? 'pos' : 'neg'}">${total >= 0 ? '▲' : '▼'} ${money(total)}</span>
+      </div>
+      ${walletsTotalsLine(totals)}
+    </section>
     <div class="list">
       ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : emptyState('No wallets yet. Tap + to add one.', 'wallet')}
     </div>
@@ -898,17 +975,26 @@ function walletDetailRow(wallet) {
   const monthTx = store.walletTransactions(wallet.id).filter((r) => store.monthKey(r.date) === month)
   const income = monthTx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
   const expense = monthTx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
+  const note = []
+  if (income || expense) note.push(`this month +${money(income)} / −${money(expense)}`)
+  if (parts.foreign && parts.currency) {
+    note.push(parts.converted === null
+      ? `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} (no rate)`
+      : `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} ≈ ${money(parts.converted)}`)
+  }
   return `
-    <article class="item" style="align-items:start" data-action="open-wallet" data-id="${wallet.id}">
-      ${walletAvatar(wallet)}
+    <article class="wallet-card" style="${walletCardStyle(wallet)}" data-action="open-wallet" data-id="${wallet.id}">
+      <span class="wallet-tile">${walletTypeIcon(wallet)}</span>
       <div class="body">
-        <div class="title">${escapeHtml(wallet.name)}</div>
-        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}</div>
-        <div class="meta" style="margin-top:6px">This month in ${money(income)} · out ${money(expense)}</div>
-        <div class="meta">${walletBreakdownText(parts)}</div>
+        <div class="wallet-name">${escapeHtml(wallet.name)}</div>
+        <div class="wallet-kind">
+          <span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>
+          <span>${escapeHtml(wallet.type)}</span>
+          ${note.length ? `<span>· ${note.join(' · ')}</span>` : ''}
+        </div>
       </div>
-      <div style="display:grid;gap:8px;justify-items:end">
-        <div class="amount ${parts.total < 0 ? 'neg' : ''} mono">${money(parts.total)}</div>
+      <div class="wallet-figure">
+        <b class="mono ${parts.total < 0 ? 'neg' : ''}">${money(parts.total)}</b>
         <div class="row-actions">
           <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" title="Edit" aria-label="Edit wallet">${icon('edit')}</button>
           <button class="mini-btn danger" data-action="delete-wallet" data-id="${wallet.id}" title="Delete" aria-label="Delete wallet">${icon('trash')}</button>
@@ -1167,7 +1253,7 @@ function renderBudgets() {
       <div class="list">
         ${store.getSources().map((s) => `
           <article class="item" data-action="edit-source" data-id="${s.id}">
-            <span class="avatar" style="background:var(--blue)">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
+            <span class="avatar source">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
             <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
             ${budgetEdit ? `
               <div class="row-actions">
@@ -1178,6 +1264,45 @@ function renderBudgets() {
         `).join('')}
       </div>
     </section>
+  `
+}
+
+// A settings block: an icon tile beside the title, then its controls. This is
+// the shape the showcase's Settings tab uses (icon + label + value).
+function settingsRow(iconName, title, body) {
+  return `
+    <div class="budget-row settings-row">
+      <div class="top">
+        <span><span class="settings-ico">${icon(iconName)}</span>${escapeHtml(title)}</span>
+        ${icon('chevron')}
+      </div>
+      ${body}
+    </div>
+  `
+}
+
+// Symbol quick-picks plus the main / secondary currency and their rates.
+function currencySettingsHtml(settings, currencies) {
+  return `
+    <div class="chip-row">
+      ${WALLET_CURRENCY.filter(Boolean).concat(['$', 'E£', '€']).filter((v, i, a) => a.indexOf(v) === i).map((c) =>
+        `<button class="chip ${settings.currency === c ? 'on' : ''}" data-action="set-currency" data-value="${escapeHtml(c)}">${escapeHtml(c)}</button>`
+      ).join('')}
+    </div>
+    <div class="row2" style="margin-top:10px">
+      <label>Main currency<select id="main-currency">
+        ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.mainCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select></label>
+      <label>Secondary currency<select id="secondary-currency">
+        ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.secondaryCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select></label>
+    </div>
+    <p class="muted tight" style="margin-top:8px">Every balance a wallet keeps in another currency is turned into ${escapeHtml(settings.mainCurrency)} with these rates. Fetch them online, or type them yourself when you are offline.</p>
+    ${rateRowsHtml()}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <p class="muted tight" style="margin:0">${ratesUpdatedLabel()}</p>
+      <button class="ghost-btn compact" data-action="refresh-rate">Update rates</button>
+    </div>
   `
 }
 
@@ -1209,14 +1334,13 @@ function renderMore() {
     <section class="section">
       <div class="section-head"><h2>Preferences</h2></div>
       <div class="list">
-        <div class="budget-row">
-          <div class="top"><b>Pending transfers</b></div>
+        ${settingsRow('cal', 'Pending transfers', `
           <p class="muted tight">Choose what a transfer marked “Pending” does: wait until you untick it, or move the money right away.</p>
           <div class="chip-row">
             <button class="chip ${settings.pendingAffectsBalance ? '' : 'on'}" data-action="set-pending-behavior" data-value="wait">Don't move money yet</button>
             <button class="chip ${settings.pendingAffectsBalance ? 'on' : ''}" data-action="set-pending-behavior" data-value="count">Count as moved</button>
           </div>
-        </div>
+        `)}
       </div>
     </section>
 
@@ -1226,7 +1350,7 @@ function renderMore() {
       <div class="list">
         ${assets.length ? assets.map((a) => `
           <article class="item" data-action="edit-asset" data-id="${a.id}">
-            <span class="avatar" style="background:var(--gold)">${escapeHtml((a.name || '?').charAt(0).toUpperCase())}</span>
+            <span class="avatar asset">${escapeHtml((a.name || '?').charAt(0).toUpperCase())}</span>
             <div class="body">
               <div class="title">${escapeHtml(a.name)} ${a.sold ? '<span class="badge green">Sold</span>' : ''}</div>
               <div class="meta">Bought ${money(a.buyingPrice)}${a.date ? ` · ${store.formatDate(a.date)}` : ''}</div>
@@ -1243,7 +1367,7 @@ function renderMore() {
       <div class="list">
         ${store.getDebts().length ? store.getDebts().map((d) => `
           <article class="item" data-action="edit-debt" data-id="${d.id}">
-            <span class="avatar" style="background:${d.direction === 'Collect' ? 'var(--green)' : 'var(--red)'}">${d.direction === 'Collect' ? icon('down') : icon('up')}</span>
+            <span class="avatar ${d.direction === 'Collect' ? 'income' : 'expense'}">${d.direction === 'Collect' ? icon('down') : icon('up')}</span>
             <div class="body">
               <div class="title">${escapeHtml(d.person)}</div>
               <div class="meta"><span class="badge ${d.direction === 'Collect' ? 'green' : 'red'}">${d.direction}</span>${d.date ? store.formatDate(d.date) : ''}${d.expectedDate ? ` · due ${store.formatDate(d.expectedDate)}` : ''}${d.walletId ? ` · ${escapeHtml(store.walletName(d.walletId))}` : ''}</div>
@@ -1257,19 +1381,16 @@ function renderMore() {
     <section class="section">
       <div class="section-head"><h2>Data</h2></div>
       <div class="list">
-        <div class="budget-row">
-          <div class="top"><b>App status</b></div>
+        ${settingsRow('check', 'App status', `
           <p class="muted tight">Works fully offline · updates automatically when online · an automatic data backup is exported before every update.</p>
           <button class="ghost-btn" data-action="install-app">${deferredInstall ? 'Install app' : 'Install app (browser menu)'}</button>
-        </div>
-        <div class="budget-row">
-          <div class="top"><b>Import from CSV</b></div>
+        `)}
+        ${settingsRow('up', 'Import from CSV', `
           <p class="muted tight">Bring in your Notion exports: Wallets, Income, Expense, Transfer, Budget or Debt CSV. The type is detected automatically.</p>
           <button class="ghost-btn" data-action="import-csv">Choose CSV file</button>
           <input type="file" id="csv-input" accept=".csv,text/csv" hidden />
-        </div>
-        <div class="budget-row">
-          <div class="top"><b>Backup</b></div>
+        `)}
+        ${settingsRow('safe', 'Backup', `
           <p class="muted tight">${report.wallets} wallets · ${report.incomes} income · ${report.expenses} expenses · ${report.transfers} transfers</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
              <button class="ghost-btn" data-action="export-backup">Export backup</button>
@@ -1279,29 +1400,8 @@ function renderMore() {
              <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
            </div>
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
-        </div>
-        <div class="budget-row">
-          <div class="top"><b>Currency</b></div>
-          <div class="chip-row">
-            ${WALLET_CURRENCY.filter(Boolean).concat(['$', 'E£', '€']).filter((v, i, a) => a.indexOf(v) === i).map((c) =>
-              `<button class="chip ${settings.currency === c ? 'on' : ''}" data-action="set-currency" data-value="${escapeHtml(c)}">${escapeHtml(c)}</button>`
-            ).join('')}
-          </div>
-          <div class="row2" style="margin-top:10px">
-            <label>Main currency<select id="main-currency">
-              ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.mainCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-            </select></label>
-            <label>Secondary currency<select id="secondary-currency">
-              ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.secondaryCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-            </select></label>
-          </div>
-          <p class="muted tight" style="margin-top:8px">Every balance a wallet keeps in another currency is turned into ${escapeHtml(settings.mainCurrency)} with these rates. Fetch them online, or type them yourself when you are offline.</p>
-          ${rateRowsHtml()}
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <p class="muted tight" style="margin:0">${ratesUpdatedLabel()}</p>
-            <button class="ghost-btn compact" data-action="refresh-rate">Update rates</button>
-          </div>
-        </div>
+        `)}
+        ${settingsRow('cash', 'Currency', currencySettingsHtml(settings, currencies))}
       </div>
     </section>
 
@@ -1409,22 +1509,22 @@ function renderModal() {
           <p class="muted tight" style="margin-top:4px">Pick what you want to record.</p>
           <div class="choose-list">
             <button class="choose-item" data-action="open-income">
-              <span class="avatar" style="background:var(--green)">${icon('up')}</span>
+              <span class="avatar income">${icon('up')}</span>
               <span class="choose-body"><b>Income</b><span class="muted">Money coming in</span></span>
               ${icon('right')}
             </button>
             <button class="choose-item" data-action="open-expense">
-              <span class="avatar" style="background:var(--red)">${icon('down')}</span>
+              <span class="avatar expense">${icon('down')}</span>
               <span class="choose-body"><b>Expense</b><span class="muted">Money going out</span></span>
               ${icon('right')}
             </button>
             <button class="choose-item" data-action="open-transfer">
-              <span class="avatar" style="background:var(--blue)">${icon('transfer')}</span>
+              <span class="avatar transfer">${icon('transfer')}</span>
               <span class="choose-body"><b>Transfer</b><span class="muted">Move between wallets</span></span>
               ${icon('right')}
             </button>
             <button class="choose-item" data-action="new-goal">
-              <span class="avatar" style="background:var(--gold)">${icon('target')}</span>
+              <span class="avatar goal">${icon('target')}</span>
               <span class="choose-body"><b>Goal</b><span class="muted">A monthly spending limit</span></span>
               ${icon('right')}
             </button>

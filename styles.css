@@ -1,25 +1,33 @@
 :root {
-  --bg: #0b1220;
-  --bg-2: #0f1830;
-  --card: #131d33;
-  --card-2: #1b2742;
-  --line: rgba(255, 255, 255, 0.08);
-  --text: #eef2fb;
-  --muted: #94a6c4;
-  --gold: #f4b942;
-  --gold-soft: rgba(244, 185, 66, 0.16);
-  --green: #3ddc84;
-  --green-soft: rgba(61, 220, 132, 0.15);
+  /* Dark green-black theme taken from the UI showcase: near-black green
+     background, emerald accent, green money. */
+  --bg: #05100b;
+  --bg-2: #081a13;
+  --card: #0d2018;
+  --card-2: #143327;
+  --line: rgba(255, 255, 255, 0.075);
+  --text: #e9f6ef;
+  --muted: #84a696;
+  --accent: #35d997;
+  --accent-strong: #6ff0b6;
+  --accent-soft: rgba(53, 217, 151, 0.16);
+  /* Amber is kept for "pending" and "at the limit" states. */
+  --gold: #f2b73d;
+  --gold-soft: rgba(242, 183, 61, 0.16);
+  --green: #2fd98a;
+  --green-soft: rgba(47, 217, 138, 0.16);
   --red: #ff6b7a;
   --red-soft: rgba(255, 107, 122, 0.15);
   --blue: #6ea8ff;
-  --blue-soft: rgba(110, 168, 255, 0.15);
-  --shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
-  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.22);
-  --radius: 20px;
+  --blue-soft: rgba(110, 168, 255, 0.16);
+  --purple: #a78bfa;
+  --purple-soft: rgba(167, 139, 250, 0.16);
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.24);
+  --radius: 22px;
   --shell: 560px;
-  --tabbar-bg: rgba(15, 23, 40, 0.86);
-  --topbar-bg: rgba(11, 18, 32, 0.88);
+  --tabbar-bg: rgba(8, 26, 19, 0.88);
+  --topbar-bg: rgba(5, 16, 11, 0.9);
   --press: rgba(255, 255, 255, 0.04);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -28,18 +36,31 @@
 }
 
 :root[data-theme='light'] {
-  --bg: #f2f4fa;
+  --bg: #eaf4ef;
   --bg-2: #ffffff;
   --card: #ffffff;
-  --card-2: #edf1f8;
-  --line: rgba(15, 24, 48, 0.10);
-  --text: #111a2e;
-  --muted: #64718c;
-  --shadow: 0 18px 40px rgba(20, 28, 50, 0.12);
-  --shadow-soft: 0 6px 18px rgba(20, 28, 50, 0.08);
-  --tabbar-bg: rgba(255, 255, 255, 0.88);
-  --topbar-bg: rgba(242, 244, 250, 0.9);
-  --press: rgba(15, 24, 48, 0.04);
+  --card-2: #e4f1ea;
+  --line: rgba(11, 40, 29, 0.10);
+  --text: #0d1f18;
+  --muted: #5d7a6c;
+  --accent: #0f9d63;
+  --accent-strong: #0b7d4f;
+  --accent-soft: rgba(15, 157, 99, 0.12);
+  --gold: #a9741a;
+  --gold-soft: rgba(169, 116, 26, 0.12);
+  --green: #0f9d63;
+  --green-soft: rgba(15, 157, 99, 0.12);
+  --red: #d63f52;
+  --red-soft: rgba(214, 63, 82, 0.12);
+  --blue: #2f6fd0;
+  --blue-soft: rgba(47, 111, 208, 0.12);
+  --purple: #7c5cf0;
+  --purple-soft: rgba(124, 92, 240, 0.12);
+  --shadow: 0 18px 40px rgba(16, 44, 33, 0.12);
+  --shadow-soft: 0 6px 18px rgba(16, 44, 33, 0.08);
+  --tabbar-bg: rgba(255, 255, 255, 0.9);
+  --topbar-bg: rgba(234, 244, 239, 0.92);
+  --press: rgba(11, 40, 29, 0.04);
 }
 
 * {
@@ -97,7 +118,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 10px;
 }
@@ -114,13 +135,15 @@ button {
   min-height: 100dvh;
   padding: calc(14px + var(--safe-top)) calc(16px + var(--safe-right)) calc(120px + var(--safe-bottom)) calc(16px + var(--safe-left));
   background:
-    radial-gradient(1100px 420px at 85% -8%, rgba(244, 185, 66, 0.10), transparent 55%),
-    radial-gradient(760px 340px at -15% 12%, rgba(61, 220, 132, 0.09), transparent 50%),
+    radial-gradient(900px 380px at 82% -10%, rgba(53, 217, 151, 0.16), transparent 60%),
+    radial-gradient(620px 300px at -12% 8%, rgba(47, 217, 138, 0.10), transparent 55%),
     var(--bg);
 }
 
 :root[data-theme='light'] .app-shell {
-  background: radial-gradient(1100px 420px at 85% -8%, rgba(244, 185, 66, 0.14), transparent 55%), var(--bg);
+  background:
+    radial-gradient(900px 380px at 82% -10%, rgba(15, 157, 99, 0.12), transparent 60%),
+    var(--bg);
 }
 
 /* ---------- topbar ---------- */
@@ -172,7 +195,7 @@ button {
 
 .kicker {
   margin: 0 0 4px;
-  color: var(--gold);
+  color: var(--accent);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   font-size: 11px;
@@ -201,7 +224,7 @@ h2 {
 h2 svg {
   width: 18px;
   height: 18px;
-  color: var(--gold);
+  color: var(--accent);
   vertical-align: -2px;
   margin-right: 2px;
 }
@@ -285,11 +308,11 @@ h2 svg {
 }
 
 .primary-btn {
-  background: linear-gradient(160deg, #ffd078, var(--gold));
-  color: #241802;
+  background: linear-gradient(160deg, var(--accent-strong), var(--accent));
+  color: #04211a;
   padding: 13px 18px;
   font-size: 15px;
-  box-shadow: 0 8px 20px rgba(244, 185, 66, 0.24);
+  box-shadow: 0 10px 24px rgba(53, 217, 151, 0.26);
 }
 
 .primary-btn.full,
@@ -332,8 +355,8 @@ h2 svg {
 }
 
 .mini-btn.on {
-  background: var(--gold-soft);
-  color: var(--gold);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .mini-btn svg {
@@ -454,8 +477,8 @@ h2 svg {
 }
 
 .chip.on {
-  background: var(--gold-soft);
-  color: var(--gold);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .chip-row {
@@ -515,8 +538,8 @@ h2 svg {
 }
 
 .chip-row.segmented .chip.on {
-  background: var(--card);
-  color: var(--gold);
+  background: var(--accent);
+  color: #04211a;
   box-shadow: var(--shadow-soft);
 }
 
@@ -524,7 +547,9 @@ h2 svg {
 .hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(160deg, var(--card-2), var(--card));
+  background:
+    radial-gradient(120% 140% at 12% 0%, rgba(53, 217, 151, 0.20), transparent 58%),
+    linear-gradient(160deg, var(--card-2), var(--card));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px;
@@ -533,12 +558,18 @@ h2 svg {
   animation: rise 0.32s ease both;
 }
 
+:root[data-theme='light'] .hero {
+  background:
+    radial-gradient(120% 140% at 12% 0%, rgba(15, 157, 99, 0.14), transparent 58%),
+    linear-gradient(160deg, #ffffff, var(--card-2));
+}
+
 .hero::after {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(244, 185, 66, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, rgba(53, 217, 151, 0.6), transparent);
 }
 
 .hero .label {
@@ -567,6 +598,110 @@ h2 svg {
   justify-content: space-between;
   align-items: flex-start;
   gap: 14px;
+}
+
+/* Income / Expense tiles plus the save-rate ring, as in the showcase. */
+.hero-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.tile {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 12px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.tile .tile-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.tile .tile-label svg {
+  width: 13px;
+  height: 13px;
+}
+
+.tile.income {
+  background: linear-gradient(170deg, var(--green-soft), transparent 70%), var(--bg-2);
+  border-color: rgba(47, 217, 138, 0.24);
+}
+
+.tile.income .tile-label,
+.tile.income .tile-figure {
+  color: var(--green);
+}
+
+.tile.expense {
+  background: linear-gradient(170deg, var(--red-soft), transparent 70%), var(--bg-2);
+  border-color: rgba(255, 107, 122, 0.22);
+}
+
+.tile.expense .tile-label,
+.tile.expense .tile-figure {
+  color: var(--red);
+}
+
+.tile-figure {
+  font-weight: 700;
+  font-size: clamp(13px, 4vw, 16px);
+  overflow-wrap: anywhere;
+}
+
+/* Save-rate ring: a conic gradient ring with the percentage inside. */
+.tile.rate {
+  justify-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.tile.rate .tile-label {
+  grid-column: 1 / -1;
+}
+
+.ring {
+  --p: 0%;
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: conic-gradient(var(--green) 0 var(--p), var(--card-2) var(--p) 100%);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.ring::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--bg-2);
+}
+
+.ring span {
+  position: relative;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.tile.rate .tile-figure {
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .pill {
@@ -626,6 +761,87 @@ h2 svg {
   color: var(--red);
 }
 
+/* ---------- wallet cards (Wallets screen) ---------- */
+.wallet-card {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
+  gap: 12px;
+  align-items: center;
+  transition: border-color 0.18s ease, transform 0.16s ease, background 0.18s ease;
+}
+
+/* A tinted edge in the wallet's own colour, as in the showcase. */
+.wallet-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 20px 0 0 20px;
+  background: var(--wc, var(--accent));
+}
+
+.wallet-tile {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: var(--wc-soft, var(--accent-soft));
+  color: var(--wc, var(--accent));
+  flex: none;
+}
+
+.wallet-tile svg {
+  width: 23px;
+  height: 23px;
+}
+
+.wallet-card .body {
+  min-width: 0;
+}
+
+.wallet-name {
+  font-weight: 700;
+  font-size: 15.5px;
+  overflow-wrap: anywhere;
+}
+
+.wallet-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.wallet-figure {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  text-align: right;
+}
+
+.wallet-figure b {
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.wallet-figure b.neg {
+  color: var(--red);
+}
+
+.wallet-figure .wallet-note {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 .progress-track {
   height: 10px;
   border-radius: 999px;
@@ -637,7 +853,7 @@ h2 svg {
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--green), var(--gold));
+  background: linear-gradient(90deg, #23c178, var(--green));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
@@ -681,14 +897,60 @@ h2 svg {
 }
 
 .item .avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
   font-weight: 700;
   font-size: 16px;
-  color: #06111f;
+  flex: none;
+}
+
+.item .avatar svg {
+  width: 21px;
+  height: 21px;
+}
+
+/* Category / wallet tints: a soft tile with a coloured glyph. */
+.avatar.income {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.avatar.expense {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.avatar.transfer {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.avatar.wallet {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.avatar.frozen {
+  background: var(--card-2);
+  color: var(--muted);
+}
+
+.avatar.source {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.avatar.asset {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.avatar.goal {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .item .body {
@@ -827,13 +1089,13 @@ h2 svg {
 }
 
 .goal-ico {
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  background: var(--gold-soft);
-  color: var(--gold);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .goal-card.over .goal-ico {
@@ -842,8 +1104,29 @@ h2 svg {
 }
 
 .goal-ico svg {
-  width: 20px;
-  height: 20px;
+  width: 21px;
+  height: 21px;
+}
+
+/* Percentage badge that sits beside the spent/limit figures. */
+.goal-pct {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.goal-card.warn .goal-pct {
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.goal-card.over .goal-pct {
+  color: var(--red);
+  background: var(--red-soft);
 }
 
 .goal-figures {
@@ -852,6 +1135,13 @@ h2 svg {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.goal-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .goal-spent {
@@ -907,9 +1197,9 @@ h2 svg {
   gap: 9px;
   padding: 13px 16px;
   border-radius: 16px;
-  border: 1px dashed rgba(244, 185, 66, 0.45);
-  background: var(--gold-soft);
-  color: var(--gold);
+  border: 1px dashed rgba(53, 217, 151, 0.45);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 14px;
   font-weight: 700;
   transition: transform 0.14s ease, background 0.18s ease, border-color 0.18s ease;
@@ -1029,11 +1319,11 @@ h2 svg {
   width: 56px;
   height: 56px;
   border-radius: 19px;
-  background: linear-gradient(160deg, #ffd078, var(--gold));
-  color: #2a1c04;
+  background: linear-gradient(160deg, var(--accent-strong), var(--accent));
+  color: #04211a;
   display: grid;
   place-items: center;
-  box-shadow: 0 12px 30px rgba(244, 185, 66, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  box-shadow: 0 14px 32px rgba(53, 217, 151, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.4);
   z-index: 20;
 }
 
@@ -1080,8 +1370,8 @@ h2 svg {
 }
 
 .tab.active {
-  color: var(--gold);
-  background: var(--gold-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* ---------- modal / form ---------- */
@@ -1186,7 +1476,7 @@ input[type='checkbox'] {
   min-height: 0;
   -webkit-appearance: checkbox;
   appearance: checkbox;
-  accent-color: var(--gold);
+  accent-color: var(--accent);
 }
 
 input[type='date'] {
@@ -1299,7 +1589,13 @@ label,
   border-radius: 12px;
   display: grid;
   place-items: center;
-  color: #06111f;
+  color: var(--wc, #06111f);
+  background: var(--wc-soft, var(--card));
+}
+
+.choose-item .avatar svg {
+  width: 19px;
+  height: 19px;
 }
 
 .choose-item > svg {
@@ -1325,23 +1621,95 @@ label,
 /* ---------- budget bars ---------- */
 .budget-row {
   display: grid;
-  gap: 7px;
-  padding: 12px 14px;
+  gap: 9px;
+  padding: 13px 14px;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 18px;
   transition: border-color 0.18s ease;
 }
 
 .budget-row .top {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   font-size: 13px;
 }
 
+.budget-row .top > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-weight: 600;
+}
+
 .budget-row .top b {
   font-size: 14px;
+}
+
+.budget-row .top .mono {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Category colour tile used on budget rows. */
+.cat-tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.cat-tile svg {
+  width: 17px;
+  height: 17px;
+}
+
+.budget-row .pct {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.budget-row .pct.warn {
+  color: var(--gold);
+}
+
+.budget-row .pct.over {
+  color: var(--red);
+}
+
+/* Settings blocks: icon tile beside the title, like the showcase's Settings. */
+.budget-row.settings-row {
+  gap: 11px;
+}
+
+.budget-row .top > svg,
+.budget-row .top .settings-ico svg {
+  flex: none;
+}
+
+.settings-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.budget-row .top > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  margin-left: auto;
 }
 
 .repeat-disclosures {
@@ -1405,7 +1773,7 @@ label,
 }
 
 .bar {
-  height: 8px;
+  height: 9px;
   border-radius: 999px;
   background: var(--card-2);
   overflow: hidden;
@@ -1415,7 +1783,7 @@ label,
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #2fbf74, var(--green));
+  background: linear-gradient(90deg, #23c178, var(--green));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
@@ -1590,7 +1958,7 @@ label,
   font-size: 10px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
-  color: var(--gold);
+  color: var(--accent);
 }
 
 .cal-day.skipped {
@@ -1677,13 +2045,13 @@ label,
   }
   .goal-add-btn:hover {
     background: var(--card);
-    border-color: var(--gold);
+    border-color: var(--accent);
   }
   .tab:hover {
     color: var(--text);
   }
   .tab.active:hover {
-    color: var(--gold);
+    color: var(--accent);
   }
   .chart-bars i:hover {
     filter: brightness(1.18);
