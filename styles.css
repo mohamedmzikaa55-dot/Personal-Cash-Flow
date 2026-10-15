@@ -1218,6 +1218,36 @@ textarea::placeholder {
   gap: 10px;
 }
 
+/* ---------- exchange rate rows (Settings → Currency) ---------- */
+.rate-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rate-row .rate-name {
+  min-width: 62px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rate-row input {
+  flex: 1;
+  min-width: 0;
+  max-width: 150px;
+}
+
+.rate-row .muted {
+  font-size: 12px;
+}
+
 label,
 .item .body,
 .budget-row .top,

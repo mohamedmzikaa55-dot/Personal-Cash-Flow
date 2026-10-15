@@ -7,6 +7,18 @@ export const WALLET_TYPES = ['In Hand', 'Digital Wallet', 'Safe']
 export const WALLET_STATUS = ['Available', 'Freezed']
 export const WALLET_CURRENCY = ['', '$', 'E£', 'EGP', '€', 'SAR', 'AED']
 
+// Currencies a wallet's second balance can be kept in. `$`/`E£`/`€`/`£` are
+// shown as symbols because that is how they appear in the exports, but every
+// rate is stored under the ISO code (see currencyCode) so a symbol and its code
+// always match.
+export const CURRENCY_CHOICES = [
+  '$', 'E£', 'EGP', '€', '£', 'SAR', 'AED', 'USD', 'EUR', 'GBP',
+  'KWD', 'QAR', 'OMR', 'BHD', 'JOD', 'TRY', 'MAD', 'TND', 'DZD',
+  'LYD', 'SDG', 'IQD', 'LBP', 'ILS', 'CNY', 'JPY', 'INR', 'PKR',
+  'CAD', 'AUD', 'CHF', 'SEK', 'NOK', 'DKK', 'RUB', 'BRL', 'ZAR',
+  'NGN', 'KES', 'GHS', 'SGD', 'MYR', 'IDR', 'THB', 'PHP', 'KRW', 'MXN'
+]
+
 const PALETTE = [
   '#5b8cff', '#a06bff', '#22b07d', '#e8a51c', '#14b8a6',
   '#f472b6', '#38bdf8', '#fb923c', '#a3e635', '#facc15',
@@ -15,18 +27,20 @@ const PALETTE = [
 
 // Seed data mirrors the Notion export this app was built from: the wallet
 // list, expense categories and their monthly budgets, and income sources.
+// `start` is the wallet's opening balance in the main currency, `foreign` is a
+// balance held in another currency (converted with the saved rate).
 const DEFAULT_WALLETS = [
-  { name: 'Mini Pocket', type: 'In Hand', status: 'Available', opening: 200 },
-  { name: 'Cashed', type: 'In Hand', status: 'Available', opening: 3110 },
-  { name: 'Saved Cash', type: 'Safe', status: 'Available', opening: 21000 },
-  { name: 'RedToPay Virtual Card', type: 'Digital Wallet', status: 'Available', opening: 0, currency: '?1.60' },
-  { name: 'SproutGigs Wallet', type: 'Digital Wallet', status: 'Freezed', opening: 0, currency: '?2.97' },
-  { name: 'EasyPay Visa Card', type: 'Digital Wallet', status: 'Available', opening: 42 },
-  { name: '5amsat Wallet', type: 'Digital Wallet', status: 'Freezed', opening: 0, currency: '?20.00' },
-  { name: 'PayPal Wallet', type: 'Digital Wallet', status: 'Available', opening: 0 },
-  { name: 'Etisalat Cash', type: 'Digital Wallet', status: 'Available', opening: 41.7 },
-  { name: 'Vodafone Cash', type: 'Digital Wallet', status: 'Available', opening: 783 },
-  { name: 'AAIB Visa Card', type: 'Digital Wallet', status: 'Available', opening: 1662 }
+  { name: 'Mini Pocket', type: 'In Hand', status: 'Available', start: 200 },
+  { name: 'Cashed', type: 'In Hand', status: 'Available', start: 3110 },
+  { name: 'Saved Cash', type: 'Safe', status: 'Available', start: 21000 },
+  { name: 'RedToPay Virtual Card', type: 'Digital Wallet', status: 'Available', start: 0, foreign: 1.6, currency: '$' },
+  { name: 'SproutGigs Wallet', type: 'Digital Wallet', status: 'Freezed', start: 0, foreign: 2.97, currency: '$' },
+  { name: 'EasyPay Visa Card', type: 'Digital Wallet', status: 'Available', start: 42 },
+  { name: '5amsat Wallet', type: 'Digital Wallet', status: 'Freezed', start: 0, foreign: 20, currency: '$' },
+  { name: 'PayPal Wallet', type: 'Digital Wallet', status: 'Available', start: 0 },
+  { name: 'Etisalat Cash', type: 'Digital Wallet', status: 'Available', start: 41.7 },
+  { name: 'Vodafone Cash', type: 'Digital Wallet', status: 'Available', start: 783 },
+  { name: 'AAIB Visa Card', type: 'Digital Wallet', status: 'Available', start: 1662 }
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -173,14 +187,65 @@ function clampColor(color, index) {
   return /^#[0-9a-f]{3,8}$/i.test(c) ? c : PALETTE[index % PALETTE.length]
 }
 
+// The ISO code a currency symbol or code maps to, so "$" and "USD" land on the
+// same key. Returns '' when nothing usable is left (an unmappable symbol).
+const CODE_BY_SYMBOL = {
+  '$': 'USD',
+  'US$': 'USD',
+  USD: 'USD',
+  'E£': 'EGP',
+  EGP: 'EGP',
+  '£': 'GBP',
+  GBP: 'GBP',
+  '€': 'EUR',
+  EUR: 'EUR',
+  '﷼': 'SAR',
+  SAR: 'SAR',
+  AED: 'AED',
+  KWD: 'KWD',
+  QAR: 'QAR',
+  OMR: 'OMR',
+  BHD: 'BHD',
+  JOD: 'JOD',
+  '¥': 'JPY',
+  JPY: 'JPY',
+  CNY: 'CNY'
+}
+
+function currencyCode(value) {
+  const raw = str(value, 12)
+  if (!raw) return ''
+  if (CODE_BY_SYMBOL[raw]) return CODE_BY_SYMBOL[raw]
+  if (CODE_BY_SYMBOL[raw.toUpperCase()]) return CODE_BY_SYMBOL[raw.toUpperCase()]
+  const letters = raw.replace(/[^A-Za-z]/g, '').toUpperCase()
+  return letters ? letters.slice(0, 6) : ''
+}
+
+// A wallet's second-balance currency must look like a currency. Older exports
+// stuffed a dollar *amount* into this field ("?1.60"), which is not a currency
+// — those strings are dropped so the amount can be entered as the second
+// balance instead.
+function sanitizeCurrency(value) {
+  const c = str(value, 12)
+  if (!c) return ''
+  if (/[\d.,]/.test(c)) return ''
+  return c
+}
+
 function normalizeWallet(wallet) {
   return {
     id: wallet.id || uid('w'),
     name: str(wallet.name, 60) || 'Wallet',
     type: WALLET_TYPES.includes(wallet.type) ? wallet.type : 'In Hand',
     status: WALLET_STATUS.includes(wallet.status) ? wallet.status : 'Available',
-    opening: parseMoney(wallet.opening),
-    currency: str(wallet.currency, 12),
+    // What the wallet began with, in the MAIN currency (`opening` is the legacy
+    // name it was imported/backed up under).
+    start: parseMoney(wallet.start != null ? wallet.start : wallet.opening),
+    // Extra amount the owner allows themselves to use from this wallet.
+    allowable: Math.max(0, parseMoney(wallet.allowable)),
+    // A second balance kept in another currency, converted with the saved rate.
+    foreign: parseMoney(wallet.foreign),
+    currency: sanitizeCurrency(wallet.currency),
     note: str(wallet.note, 200)
   }
 }
@@ -345,7 +410,20 @@ function normalizeGoal(goal) {
 function defaultState() {
   return {
     version: 1,
-    settings: { currency: '$', theme: 'dark', mainCurrency: 'EGP', secondaryCurrency: '$', exchangeRate: null, rateUpdatedAt: '', pendingAffectsBalance: false },
+    // `rates` maps an ISO currency code to what one unit costs in the main
+    // currency. `exchangeRate`/`rateUpdatedAt` stay as the mirrored entry for
+    // the secondary currency, so older backups keep working.
+    settings: {
+      currency: '$',
+      theme: 'dark',
+      mainCurrency: 'EGP',
+      secondaryCurrency: '$',
+      rates: {},
+      exchangeRate: null,
+      rateUpdatedAt: '',
+      ratesUpdatedAt: '',
+      pendingAffectsBalance: false
+    },
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
     sources: DEFAULT_SOURCES.map((name) => normalizeSource({ name })),
@@ -358,6 +436,20 @@ function defaultState() {
   }
 }
 
+// Only positive numbers survive, and they are stored under the currency's ISO
+// code so a symbol ("$") and its code ("USD") share one entry.
+function normalizeRates(raw) {
+  const out = {}
+  if (raw && typeof raw === 'object') {
+    Object.keys(raw).forEach((key) => {
+      const code = currencyCode(key)
+      const value = Number(raw[key])
+      if (code && Number.isFinite(value) && value > 0) out[code] = roundRate(value)
+    })
+  }
+  return out
+}
+
 function migrate(raw) {
   if (!raw || typeof raw !== 'object') return defaultState()
   const out = defaultState()
@@ -366,9 +458,16 @@ function migrate(raw) {
     theme: raw.settings && raw.settings.theme === 'light' ? 'light' : 'dark',
     mainCurrency: str(raw.settings && raw.settings.mainCurrency, 12) || 'EGP',
     secondaryCurrency: str(raw.settings && raw.settings.secondaryCurrency, 12) || '$',
+    rates: normalizeRates(raw.settings && raw.settings.rates),
     exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
     rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40),
+    ratesUpdatedAt: str(raw.settings && raw.settings.ratesUpdatedAt, 40),
     pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true
+  }
+  // A saved single rate for the secondary currency becomes an entry in the map.
+  const legacyCode = currencyCode(out.settings.secondaryCurrency)
+  if (legacyCode && Number(out.settings.exchangeRate) > 0) {
+    out.settings.rates[legacyCode] = roundRate(out.settings.exchangeRate)
   }
   if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
   if (Array.isArray(raw.categories) && raw.categories.length) out.categories = raw.categories.map(normalizeCategory)
@@ -500,10 +599,67 @@ function ensureSource(name) {
 
 // ---------- computed ----------
 
+// Rates can be small (1 EGP is a fraction of a cent), so they keep more
+// decimals than money does.
+function roundRate(n) {
+  return Math.round((Number(n) || 0) * 1000000) / 1000000
+}
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+// What one unit of `currency` costs in the main currency, or 0 when the rate
+// has not been saved yet.
+function currencyRate(currency) {
+  const code = currencyCode(currency)
+  if (!code) return 0
+  const main = currencyCode(state.settings.mainCurrency)
+  if (main && code === main) return 1
+  const saved = Number(state.settings.rates && state.settings.rates[code])
+  // The single secondary-currency rate is honoured for older saved data.
+  if (saved > 0) return saved
+  if (code === currencyCode(state.settings.secondaryCurrency) && Number(state.settings.exchangeRate) > 0) {
+    return Number(state.settings.exchangeRate)
+  }
+  return 0
+}
+
+// Currencies worth fetching a rate for: the secondary currency, every currency
+// a wallet keeps a second balance in, and anything already saved.
+function rateCurrencies() {
+  const main = currencyCode(state.settings.mainCurrency)
+  const codes = new Set()
+  const add = (code) => {
+    if (code && (!main || code !== main)) codes.add(code)
+  }
+  add(currencyCode(state.settings.secondaryCurrency))
+  state.wallets.forEach((w) => {
+    if (parseMoney(w.foreign) !== 0) add(currencyCode(w.currency))
+  })
+  Object.keys(state.settings.rates || {}).forEach(add)
+  return [...codes]
+}
+
+// Convert an amount in `currency` into the app's main currency using the rate
+// saved in Settings. Returns null when no rate is known for that currency, so
+// callers can say so instead of silently adding a wrong number. An amount with
+// no currency at all is already in the main currency.
+function toMainCurrency(amount, currency) {
+  const value = parseMoney(amount)
+  const from = str(currency, 12)
+  if (!from) return value
+  const main = str(state.settings.mainCurrency, 12)
+  if (from === main || currencyCode(from) === currencyCode(main)) return value
+  const rate = currencyRate(from)
+  if (rate <= 0) return null
+  return round2(value * rate)
+}
+
 function walletBalance(id) {
   const wallet = state.wallets.find((w) => w.id === id)
   if (!wallet) return 0
-  let total = wallet.opening
+  let total = parseMoney(wallet.start)
   state.incomes.forEach((r) => {
     if (r.walletId === id && isDue(r) && isActive(r)) total += r.amount
   })
@@ -524,7 +680,67 @@ function walletBalance(id) {
     if (d.walletId !== id) return
     total += d.direction === 'Lent' ? -d.amount : d.amount
   })
-  return Math.round(total * 100) / 100
+  return round2(total)
+}
+
+// What the wallet is worth in the MAIN currency: the running balance, the amount
+// the owner allows themselves to use, and any second-currency balance at the
+// saved rate. A currency with no known rate is left out of the sum.
+function walletTotal(id) {
+  const wallet = state.wallets.find((w) => w.id === id)
+  if (!wallet) return 0
+  let total = walletBalance(id) + Math.max(0, parseMoney(wallet.allowable))
+  const converted = toMainCurrency(wallet.foreign, wallet.currency)
+  if (converted !== null) total += converted
+  return round2(total)
+}
+
+// How much a wallet can cover: its running balance, the amount the owner allows
+// themselves to use, and any second-currency balance converted at the saved
+// rate. Transactions are checked against this, so the allowance is what lets an
+// expense through even when the balance alone would not.
+function walletSpendable(id) {
+  return walletTotal(id)
+}
+
+// The same, minus an amount that is already counted in the wallet's balance —
+// used when editing an existing expense.
+function walletSpendableExcluding(id, amount) {
+  return round2(walletSpendable(id) - Math.abs(parseMoney(amount)))
+}
+
+// Per-wallet parts of the total, so screens can show what it is made of and
+// warn when a second-currency balance cannot be converted.
+function walletTotals() {
+  const acc = { main: 0, allowable: 0, foreign: 0, unrated: 0, currencies: [] }
+  const seen = {}
+  state.wallets.forEach((w) => {
+    acc.main += walletBalance(w.id)
+    acc.allowable += Math.max(0, parseMoney(w.allowable))
+    const code = currencyCode(w.currency)
+    if (code && parseMoney(w.foreign) !== 0) {
+      if (!seen[code]) {
+        seen[code] = { code, amount: 0, main: 0, rated: true }
+        acc.currencies.push(seen[code])
+      }
+      seen[code].amount += parseMoney(w.foreign)
+      const converted = toMainCurrency(w.foreign, w.currency)
+      if (converted === null) { seen[code].rated = false; acc.unrated += 1 }
+      else seen[code].main += converted
+    }
+  })
+  acc.currencies.forEach((c) => {
+    c.amount = round2(c.amount)
+    c.main = round2(c.main)
+    if (c.rated) acc.foreign += c.main
+  })
+  return {
+    main: round2(acc.main),
+    allowable: round2(acc.allowable),
+    foreign: round2(acc.foreign),
+    unrated: acc.unrated,
+    currencies: acc.currencies
+  }
 }
 
 function monthItems(month) {
@@ -706,11 +922,18 @@ function nextScheduledAt() {
 }
 
 function netWorth() {
-  const cash = state.wallets.reduce((sum, w) => sum + walletBalance(w.id), 0)
+  const totals = walletTotals()
+  const cash = round2(totals.main + totals.allowable + totals.foreign)
   const assets = state.assets.filter((a) => !a.sold).reduce((sum, a) => sum + a.buyingPrice, 0)
   const lent = state.debts.filter((d) => d.direction === 'Lent' && !d.settled).reduce((sum, d) => sum + d.amount, 0)
   const collected = state.debts.filter((d) => d.direction === 'Collect').reduce((sum, d) => sum + d.amount, 0)
-  return { cash, assets, receivable: Math.max(0, lent - collected), total: Math.round((cash + assets + Math.max(0, lent - collected)) * 100) / 100 }
+  return {
+    cash,
+    ...totals,
+    assets,
+    receivable: Math.max(0, lent - collected),
+    total: round2(cash + assets + Math.max(0, lent - collected))
+  }
 }
 
 // ---------- formatting ----------
@@ -809,14 +1032,17 @@ function importWallets(text) {
     const balance = parseMoney(pick(row, 'Balance'))
     const type = pick(row, 'Tybe', 'Type')
     const status = pick(row, 'Transaction Status')
-    const currency = pick(row, 'Dollar Currency')
+    // The export's "Dollar Currency" column held a dollar *amount*, not a
+    // currency — it lands in the wallet's second balance, in dollars.
+    const dollarAmount = parseMoney(pick(row, 'Dollar Currency', 'Foreign Balance'))
     const existing = findByName(state.wallets, name)
     const payload = {
       name,
       type: WALLET_TYPES.includes(type) ? type : (existing ? existing.type : 'In Hand'),
       status: WALLET_STATUS.includes(status) ? status : (existing ? existing.status : 'Available'),
-      opening: opening || balance || (existing ? existing.opening : 0),
-      currency: currency || (existing ? existing.currency : '')
+      start: opening || balance || (existing ? existing.start : 0),
+      foreign: dollarAmount || (existing ? existing.foreign : 0),
+      currency: dollarAmount ? '$' : (existing ? existing.currency : '')
     }
     if (existing) Object.assign(existing, normalizeWallet({ ...existing, ...payload }))
     else {
@@ -980,31 +1206,82 @@ export const store = {
   },
   setMainCurrency(value) {
     state.settings.mainCurrency = str(value, 12) || 'EGP'
+    // Every saved rate means "cost in the main currency", so they all stop
+    // being valid the moment the main currency changes. Drop them and let the
+    // rates be fetched again rather than converting with the wrong numbers.
+    state.settings.rates = {}
+    state.settings.ratesUpdatedAt = ''
+    state.settings.exchangeRate = null
+    state.settings.rateUpdatedAt = ''
     save()
   },
   setSecondaryCurrency(value) {
     state.settings.secondaryCurrency = str(value, 12) || '$'
     save()
   },
-  async refreshRate() {
-    const toCode = (v) => {
-      const s = String(v || '').trim()
-      if (s === '$') return 'USD'
-      if (s === '€') return 'EUR'
-      if (s === '£') return 'GBP'
-      if (s === 'E£' || s.toUpperCase() === 'EGP') return 'EGP'
-      return s.replace(/[^A-Za-z]/g, '').toUpperCase() || 'USD'
+  // Typed by hand when the online rate cannot be fetched — wallet balances in
+  // another currency are converted with it. Anything invalid is ignored so a
+  // stray keystroke can never wipe a working rate.
+  setExchangeRate(value) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) return
+    state.settings.exchangeRate = roundRate(n)
+    state.settings.rateUpdatedAt = new Date().toISOString()
+    this.setRate(state.settings.secondaryCurrency, n)
+  },
+  // Save the rate for one currency by symbol or code. The secondary currency's
+  // entry is mirrored onto the legacy single-rate fields so older saved data
+  // and the Settings summary stay consistent.
+  setRate(currency, value) {
+    const code = currencyCode(currency)
+    const n = Number(value)
+    if (!code || !Number.isFinite(n) || n <= 0) return
+    state.settings.rates[code] = roundRate(n)
+    state.settings.ratesUpdatedAt = new Date().toISOString()
+    if (code === currencyCode(state.settings.secondaryCurrency)) {
+      state.settings.exchangeRate = state.settings.rates[code]
+      state.settings.rateUpdatedAt = state.settings.ratesUpdatedAt
     }
-    const from = toCode(state.settings.secondaryCurrency)
-    const to = toCode(state.settings.mainCurrency)
+    save()
+  },
+  getRates() {
+    return { ...state.settings.rates }
+  },
+  rateFor(currency) {
+    return currencyRate(currency)
+  },
+  rateCurrencies,
+  rateUpdatedAt() {
+    return state.settings.ratesUpdatedAt || state.settings.rateUpdatedAt || ''
+  },
+  // Fetch live rates for every currency the wallets use. One request against
+  // the main currency gives all of them at once.
+  async refreshRate() {
+    const main = currencyCode(state.settings.mainCurrency) || 'EGP'
+    const wanted = rateCurrencies()
+    if (!wanted.length) return { ok: false, reason: 'No other currency in use' }
     try {
-      const res = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(from)}`)
+      const res = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(main)}`)
       const data = await res.json()
-      if (data && data.result === 'success' && data.rates && data.rates[to]) {
-        state.settings.exchangeRate = Math.round(Number(data.rates[to]) * 100) / 100
-        state.settings.rateUpdatedAt = new Date().toISOString()
+      if (data && data.result === 'success' && data.rates) {
+        let updated = 0
+        wanted.forEach((code) => {
+          const perUnit = Number(data.rates[code])
+          if (Number.isFinite(perUnit) && perUnit > 0) {
+            state.settings.rates[code] = roundRate(1 / perUnit)
+            updated += 1
+          }
+        })
+        if (!updated) return { ok: false, reason: 'Rate not available' }
+        state.settings.ratesUpdatedAt = new Date().toISOString()
+        // Mirror the secondary currency onto the legacy single-rate fields.
+        const secondaryCode = currencyCode(state.settings.secondaryCurrency)
+        if (secondaryCode && state.settings.rates[secondaryCode]) {
+          state.settings.exchangeRate = state.settings.rates[secondaryCode]
+          state.settings.rateUpdatedAt = state.settings.ratesUpdatedAt
+        }
         save()
-        return { ok: true, rate: state.settings.exchangeRate }
+        return { ok: true, count: updated }
       }
       return { ok: false, reason: 'Rate not available' }
     } catch {
@@ -1033,6 +1310,26 @@ export const store = {
   },
   walletName,
   walletBalance,
+  walletTotal,
+  walletSpendable,
+  walletSpendableExcluding,
+  walletTotals,
+  toMainCurrency,
+  currencyCode,
+  // Every currency the wallet form can offer: the built-in list plus the ones
+  // configured in Settings, so a rate is always available for them.
+  currencyChoices() {
+    const extra = [
+      state.settings.mainCurrency,
+      state.settings.secondaryCurrency,
+      ...rateCurrencies().map((code) => {
+        const symbol = Object.keys(CODE_BY_SYMBOL).find((key) => CODE_BY_SYMBOL[key] === code)
+        return symbol || code
+      })
+    ]
+    const all = CURRENCY_CHOICES.concat(extra).filter(Boolean)
+    return all.filter((c, i) => all.indexOf(c) === i)
+  },
   addWallet(fields) {
     const wallet = normalizeWallet(fields)
     state.wallets.push(wallet)

@@ -103,6 +103,58 @@ function money(value, withSign) {
   return store.formatMoney(value, withSign)
 }
 
+// Plain number with no currency symbol — for amounts that already carry their
+// own currency code next to them (a wallet's second-currency balance).
+function plainMoney(value) {
+  return (Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// The symbol an ISO code is shown as, so the Settings rate rows read "1 $ = 48.5 E£".
+const SYMBOL_BY_CODE = {
+  USD: '$',
+  EGP: 'E£',
+  EUR: '€',
+  GBP: '£',
+  SAR: 'SAR',
+  AED: 'AED',
+  JPY: '¥'
+}
+
+function currencyLabel(code) {
+  const key = String(code || '').toUpperCase()
+  return SYMBOL_BY_CODE[key] || key
+}
+
+// One editable rate per currency the wallet balances actually use: the secondary
+// currency plus every wallet that keeps a second balance in another currency.
+function rateRowsHtml() {
+  const settings = store.getSettings()
+  const codes = store.rateCurrencies()
+  if (!codes.length) {
+    return '<p class="muted tight" style="margin-top:10px">No other currency is in use yet — give a wallet a balance in another currency and its rate shows up here.</p>'
+  }
+  const rows = codes.map((code) => {
+    const label = currencyLabel(code)
+    const rate = store.rateFor(code)
+    return `
+      <div class="rate-row">
+        <span class="rate-name">1 ${escapeHtml(label)}</span>
+        <input data-rate="${escapeHtml(code)}" type="number" step="0.0001" min="0" inputmode="decimal" value="${rate ? escapeHtml(String(rate)) : ''}" placeholder="0.0000" aria-label="Rate for ${escapeHtml(label)}" />
+        <span class="muted tight">${escapeHtml(settings.mainCurrency)}</span>
+      </div>`
+  }).join('')
+  return `<div class="rate-list">${rows}</div>`
+}
+
+function ratesUpdatedLabel() {
+  const stamp = store.rateUpdatedAt()
+  const codes = store.rateCurrencies()
+  if (!codes.length) return 'Nothing to convert yet'
+  const known = codes.filter((code) => store.rateFor(code) > 0).length
+  const when = stamp ? ` · updated ${escapeHtml(store.formatDate(String(stamp).slice(0, 10)))}` : ''
+  return `${known} of ${codes.length} rate${codes.length === 1 ? '' : 's'} saved${when}`
+}
+
 function repeatLabel(repeat) {
   if (repeat === 'weekly') return 'Every week'
   if (repeat === 'monthly') return 'Every month'
@@ -199,7 +251,7 @@ function monthStep() {
 function walletSelect(selected, name, required = true) {
   return `<select name="${name}" ${required ? 'required' : ''}>
     <option value="">${required ? 'Choose wallet…' : 'No wallet'}</option>
-    ${store.getWallets().map((w) => `<option value="${w.id}" ${w.id === selected ? 'selected' : ''}>${escapeHtml(w.name)}</option>`).join('')}
+    ${store.getWallets().map((w) => `<option value="${w.id}" ${w.id === selected ? 'selected' : ''}>${escapeHtml(w.name)} · ${money(store.walletTotal(w.id))}</option>`).join('')}
   </select>`
 }
 
@@ -280,6 +332,7 @@ function renderDashboard() {
         <div class="stat"><span class="muted">Save rate</span><b class="${summary.rate >= 0 ? 'pos' : 'neg'}">${summary.rate}%</b></div>
       </div>
       <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}</p>
+      ${walletsTotalsLine(totals)}
     </section>
 
     ${renderTrend()}
@@ -318,15 +371,99 @@ function walletAvatar(wallet) {
   return `<span class="avatar" style="background:${color}">${initial}</span>`
 }
 
+// Explain what a wallet's second-currency balance is worth in the main
+// currency — and say so plainly when no rate is known for it.
+function walletForeignHint(wallet) {
+  const settings = store.getSettings()
+  const amount = Number(wallet.foreign) || 0
+  const currency = wallet.currency || ''
+  const main = settings.mainCurrency
+  if (!amount) return `Add a balance in another currency to have it counted in the wallet total${currency ? '' : '.'}`
+  if (!currency) return `${plainMoney(amount)} is counted as ${escapeHtml(main)} — pick a currency above to convert it instead.`
+  if (currency === main || store.currencyCode(currency) === store.currencyCode(main)) {
+    return `${plainMoney(amount)} ${escapeHtml(currency)} is already your main currency.`
+  }
+  const rate = store.rateFor(currency)
+  const converted = store.toMainCurrency(amount, currency)
+  if (converted === null) {
+    return `No rate saved for ${escapeHtml(currency)} → ${escapeHtml(main)}, so it is left out of the total. Set it under Settings → Currency.`
+  }
+  return `${plainMoney(amount)} ${escapeHtml(currency)} ≈ ${money(converted)} ${escapeHtml(main)} (1 ${escapeHtml(currency)} = ${rate} ${escapeHtml(main)}), counted in the wallet total.`
+}
+
+// Live version used while the wallet form is being filled in.
+function refreshWalletForeignHint() {
+  const hint = document.getElementById('wallet-foreign-hint')
+  if (!hint) return
+  const form = hint.closest('form')
+  if (!form) return
+  const foreign = form.querySelector('input[name="foreign"]')
+  const currency = form.querySelector('select[name="currency"]')
+  hint.innerHTML = walletForeignHint({
+    foreign: foreign ? Number(foreign.value) || 0 : 0,
+    currency: currency ? currency.value : ''
+  })
+}
+
+// Wallet total split into the pieces the totals are built from.
+function walletBreakdown(wallet) {
+  const settings = store.getSettings()
+  const balance = store.walletBalance(wallet.id)
+  const allowable = Math.max(0, Number(wallet.allowable) || 0)
+  const converted = store.toMainCurrency(wallet.foreign, wallet.currency)
+  return {
+    balance,
+    allowable,
+    spendable: store.walletSpendable(wallet.id),
+    foreign: Number(wallet.foreign) || 0,
+    currency: wallet.currency || '',
+    rate: store.rateFor(wallet.currency),
+    converted,
+    total: store.walletTotal(wallet.id)
+  }
+}
+
+function walletBreakdownText(parts) {
+  const bits = [`Start + moves ${money(parts.balance)}`]
+  if (parts.allowable) bits.push(`allowable ${money(parts.allowable)}`)
+  if (parts.foreign) {
+    bits.push(parts.converted === null
+      ? `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} (no rate)`
+      : `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} ≈ ${money(parts.converted)}`)
+  }
+  return bits.join(' · ')
+}
+
+// What the total balance is made of: the wallet balances in the main currency,
+// the amount allowed on top of them, and any second balance held in another
+// currency. Wallets whose other currency has no saved rate are counted out
+// rather than silently added up wrong.
+function walletsTotalsLine(totals) {
+  const settings = store.getSettings()
+  const main = escapeHtml(settings.mainCurrency)
+  const bits = [`${main} balance ${money(totals.main)}`]
+  if (totals.allowable) bits.push(`allowable ${money(totals.allowable)}`)
+  totals.currencies.forEach((c) => {
+    const label = currencyLabel(c.code)
+    bits.push(c.rated
+      ? `${label} ${plainMoney(c.amount)} ≈ ${money(c.main)}`
+      : `${label} ${plainMoney(c.amount)} (no rate)`)
+  })
+  if (totals.unrated) bits.push(`${totals.unrated} wallet${totals.unrated === 1 ? '' : 's'} not converted — set the rate in Settings`)
+  return `<p class="sub" style="margin-top:4px">Wallets: ${bits.join(' · ')}</p>`
+}
+
 function walletRow(wallet) {
+  const parts = walletBreakdown(wallet)
   return `
     <article class="item" data-action="open-wallet" data-id="${wallet.id}">
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
-        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}${wallet.currency ? ` · ${escapeHtml(wallet.currency)}` : ''}</div>
+        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}${parts.foreign && parts.currency ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}` : ''}</div>
+        <div class="meta">${walletBreakdownText(parts)}</div>
       </div>
-      <div class="amount ${wallet.current < 0 ? 'neg' : ''} mono">${money(wallet.current)}</div>
+      <div class="amount ${parts.total < 0 ? 'neg' : ''} mono">${money(parts.total)}</div>
     </article>
   `
 }
@@ -735,7 +872,8 @@ function renderGoalsCompact() {
 
 function renderWallets() {
   const wallets = store.getWallets()
-  const total = wallets.reduce((sum, w) => sum + w.current, 0)
+  const total = wallets.reduce((sum, w) => sum + store.walletTotal(w.id), 0)
+  const totals = store.walletTotals()
   return `
     <div class="topbar">
       <div>
@@ -747,6 +885,7 @@ function renderWallets() {
         <button class="ghost-btn compact" data-action="new-wallet">+ Add wallet</button>
       </div>
     </div>
+    ${walletsTotalsLine(totals)}
     <div class="list">
       ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : emptyState('No wallets yet. Tap + to add one.', 'wallet')}
     </div>
@@ -755,6 +894,7 @@ function renderWallets() {
 }
 
 function walletDetailRow(wallet) {
+  const parts = walletBreakdown(wallet)
   const monthTx = store.walletTransactions(wallet.id).filter((r) => store.monthKey(r.date) === month)
   const income = monthTx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
   const expense = monthTx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
@@ -764,10 +904,11 @@ function walletDetailRow(wallet) {
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
         <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}</div>
-        <div class="meta" style="margin-top:6px">Opening ${money(wallet.opening)} · this month in ${money(income)} · out ${money(expense)}</div>
+        <div class="meta" style="margin-top:6px">This month in ${money(income)} · out ${money(expense)}</div>
+        <div class="meta">${walletBreakdownText(parts)}</div>
       </div>
       <div style="display:grid;gap:8px;justify-items:end">
-        <div class="amount ${wallet.current < 0 ? 'neg' : ''} mono">${money(wallet.current)}</div>
+        <div class="amount ${parts.total < 0 ? 'neg' : ''} mono">${money(parts.total)}</div>
         <div class="row-actions">
           <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" title="Edit" aria-label="Edit wallet">${icon('edit')}</button>
           <button class="mini-btn danger" data-action="delete-wallet" data-id="${wallet.id}" title="Delete" aria-label="Delete wallet">${icon('trash')}</button>
@@ -783,13 +924,13 @@ function renderWalletDetail() {
     walletDetail = null
     return renderWallets()
   }
-  const current = store.walletBalance(wallet.id)
   const tx = store.walletTransactions(wallet.id)
   const income = tx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
   const expense = tx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
   const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in' && store.transferCounts(r)).reduce((s, r) => s + r.amount, 0)
   const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out' && store.transferCounts(r)).reduce((s, r) => s + r.amount + (r.fee || 0), 0)
   const walletGoals = store.getGoals(month).filter((g) => g.walletId === wallet.id)
+  const parts = walletBreakdown(wallet)
   return `
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
@@ -805,9 +946,10 @@ function renderWalletDetail() {
     <section class="hero">
       <div class="hero-top">
         <div>
-          <span class="label">Current balance</span>
-          <div class="value mono" style="font-size:34px">${money(current)}</div>
-          <div class="sub">Opening ${money(wallet.opening)}${wallet.currency ? ` · ${escapeHtml(wallet.currency)}` : ''}</div>
+          <span class="label">Total in ${escapeHtml(store.getSettings().mainCurrency)}</span>
+          <div class="value mono" style="font-size:34px">${money(parts.total)}</div>
+          <div class="sub">Balance ${money(parts.balance)}${parts.allowable ? ` · allowable ${money(parts.allowable)}` : ''}${parts.foreign ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}${parts.converted === null ? ' (no rate)' : ` ≈ ${money(parts.converted)}`}` : ''}</div>
+          <div class="sub" style="margin-top:4px">You can spend up to ${money(parts.spendable)} from this wallet</div>
         </div>
         <span class="pill ${wallet.status === 'Freezed' ? 'neg' : 'pos'}">${wallet.status}</span>
       </div>
@@ -816,6 +958,17 @@ function renderWalletDetail() {
         <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
         <div class="stat"><span class="muted">Transfers</span><b class="mono">${money(inflow - outflow)}</b></div>
       </div>
+      <div class="stat-grid" style="margin-top:10px">
+        <div class="stat"><span class="muted">Start (main)</span><b class="mono">${money(Number(wallet.start) || 0)}</b></div>
+        <div class="stat"><span class="muted">Allowable</span><b class="mono">${money(parts.allowable)}</b></div>
+        <div class="stat"><span class="muted">Spendable</span><b class="mono">${money(parts.spendable)}</b></div>
+      </div>
+      <div class="stat-grid" style="margin-top:10px">
+        <div class="stat"><span class="muted">${parts.currency ? escapeHtml(parts.currency) : 'Other currency'}</span><b class="mono">${plainMoney(parts.foreign)}</b></div>
+        <div class="stat"><span class="muted">Worth in ${escapeHtml(store.getSettings().mainCurrency)}</span><b class="mono">${parts.foreign ? (parts.converted === null ? 'no rate' : money(parts.converted)) : '—'}</b></div>
+        <div class="stat"><span class="muted">Rate</span><b class="mono">${parts.foreign && parts.currency && parts.rate ? `1 ${escapeHtml(parts.currency)} = ${parts.rate}` : '—'}</b></div>
+      </div>
+      ${parts.spendable < 0 ? `<p class="goal-alert" style="margin-top:12px">${icon('warn')}<span>Spending has passed what this wallet allows</span></p>` : ''}
     </section>
 
     ${walletGoals.length ? `
@@ -1033,6 +1186,9 @@ function renderMore() {
   const debts = store.debtSummary()
   const assets = store.getAssets()
   const report = store.importReport()
+  // The same currency list the wallet form offers, so a main/secondary
+  // currency can always be picked for the balances already in use.
+  const currencies = store.currencyChoices()
   return `
     <div class="topbar">
       <div>
@@ -1133,15 +1289,17 @@ function renderMore() {
           </div>
           <div class="row2" style="margin-top:10px">
             <label>Main currency<select id="main-currency">
-              ${WALLET_CURRENCY.filter(Boolean).concat(['EGP', '$', '€', '£', 'SAR', 'AED']).filter((v, i, a) => a.indexOf(v) === i).map((c) => `<option value="${escapeHtml(c)}" ${settings.mainCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.mainCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
             </select></label>
             <label>Secondary currency<select id="secondary-currency">
-              ${WALLET_CURRENCY.filter(Boolean).concat(['$', 'EGP', '€', '£', 'SAR', 'AED']).filter((v, i, a) => a.indexOf(v) === i).map((c) => `<option value="${escapeHtml(c)}" ${settings.secondaryCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${settings.secondaryCurrency === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
             </select></label>
           </div>
+          <p class="muted tight" style="margin-top:8px">Every balance a wallet keeps in another currency is turned into ${escapeHtml(settings.mainCurrency)} with these rates. Fetch them online, or type them yourself when you are offline.</p>
+          ${rateRowsHtml()}
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <p class="muted tight" style="margin:0">${escapeHtml(settings.secondaryCurrency)} = ${settings.exchangeRate ? escapeHtml(String(settings.exchangeRate)) : '…'} ${escapeHtml(settings.mainCurrency)}${settings.rateUpdatedAt ? ` · updated ${escapeHtml(store.formatDate(String(settings.rateUpdatedAt).slice(0, 10)))}` : ''}</p>
-            <button class="ghost-btn compact" data-action="refresh-rate">Update rate</button>
+            <p class="muted tight" style="margin:0">${ratesUpdatedLabel()}</p>
+            <button class="ghost-btn compact" data-action="refresh-rate">Update rates</button>
           </div>
         </div>
       </div>
@@ -1285,6 +1443,8 @@ function renderModal() {
 
   if (modal === 'wallet') {
     const w = modalPayload || {}
+    const currencies = store.currencyChoices()
+    const hasCurrency = w.currency && currencies.includes(w.currency) ? w.currency : ''
     title = `${isEdit ? 'Edit' : 'New'} wallet`
     body = `
       <label>Wallet name<input name="name" required maxlength="60" value="${escapeHtml(w.name || '')}" placeholder="Cash, Visa, PayPal…" /></label>
@@ -1293,12 +1453,19 @@ function renderModal() {
         <label>Status<select name="status">${WALLET_STATUS.map((s) => `<option ${w.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       </div>
       <div class="row2">
-        <label>Opening balance<input name="opening" type="number" step="0.01" value="${Number(w.opening) || 0}" /></label>
-        <label>Foreign currency (opt.)<select name="currency">
-          ${WALLET_CURRENCY.map((c) => `<option value="${escapeHtml(c)}" ${c === (w.currency || '') ? 'selected' : ''}>${c || '— None —'}</option>`).join('')}
-          ${w.currency && !WALLET_CURRENCY.includes(w.currency) ? `<option value="${escapeHtml(w.currency)}" selected>${escapeHtml(w.currency)}</option>` : ''}
+        <label>Start (main) balance<input name="start" type="number" step="0.01" value="${Number(w.start) || 0}" /></label>
+        <label>Allowable balance<input name="allowable" type="number" step="0.01" min="0" value="${Number(w.allowable) || 0}" /></label>
+      </div>
+      <p class="muted tight" style="margin-top:-4px">Start (main) is what the wallet began with in your main currency; allowable is the extra amount you allow yourself to use from it.</p>
+      <div class="row2">
+        <label>Balance in another currency<input name="foreign" type="number" step="0.01" value="${Number(w.foreign) || 0}" /></label>
+        <label>That currency<select name="currency" data-currency>
+          <option value="">— None —</option>
+          ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${c === hasCurrency ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          ${w.currency && !currencies.includes(w.currency) ? `<option value="${escapeHtml(w.currency)}" selected>${escapeHtml(w.currency)} (no rate)</option>` : ''}
         </select></label>
       </div>
+      <p class="muted tight" id="wallet-foreign-hint" style="margin-top:-4px">${walletForeignHint(w)}</p>
     `
   } else if (modal === 'category') {
     const c = modalPayload || {}
@@ -1542,6 +1709,14 @@ function render() {
     txSearch = event.target.value || ''
     patchTxView()
   })
+  // The wallet form recalculates its second-currency hint as it is filled in.
+  const walletForm = document.querySelector('form[data-form="wallet"]')
+  if (walletForm) {
+    const hintTargets = walletForm.querySelectorAll('input[name="foreign"], select[name="currency"]')
+    hintTargets.forEach((field) => field.addEventListener('input', refreshWalletForeignHint))
+    const currencyField = walletForm.querySelector('select[name="currency"]')
+    if (currencyField) currencyField.addEventListener('change', refreshWalletForeignHint)
+  }
   scheduleDueRefresh()
 }
 
@@ -1624,7 +1799,10 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'refresh-rate') {
-    store.refreshRate().then((res) => { toast(res.ok ? 'Rate updated' : (res.reason || 'Could not update')); render() })
+    store.refreshRate().then((res) => {
+      toast(res.ok ? `Rate${res.count === 1 ? '' : 's'} updated` : (res.reason || 'Could not update'))
+      render()
+    })
     return
   }
   if (action === 'check-update') {
@@ -1879,7 +2057,7 @@ document.addEventListener('submit', (event) => {
   const num = (key) => store.parseMoney(get(key))
 
   if (type === 'wallet') {
-    const fields = { name: get('name'), type: get('type'), status: get('status'), opening: num('opening'), currency: get('currency') }
+    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency') }
     if (!fields.name) return
     if (id) store.updateWallet(id, fields)
     else store.addWallet(fields)
@@ -1938,6 +2116,22 @@ document.addEventListener('submit', (event) => {
         return
       }
     }
+    // The wallet's allowable amount is what lets an expense through even when
+    // the balance alone would not cover it — ask before going past it.
+    const spentOn = fields.walletId ? store.findWallet(fields.walletId) : null
+    if (spentOn) {
+      const existing = id ? store.findTransaction('expense', id) : null
+      const room = existing && existing.walletId === fields.walletId
+        ? store.walletSpendableExcluding(spentOn.id, existing.amount)
+        : store.walletSpendable(spentOn.id)
+      if (fields.amount > room + 0.01) {
+        const over = fields.amount - room
+        if (!window.confirm(`This expense is ${money(over)} more than ${escapeHtml(spentOn.name)} allows.\n\nBalance + allowable: ${money(room)}\nAdd it anyway?`)) {
+          toast('Expense not saved')
+          return
+        }
+      }
+    }
     if (id && data.get('applySeries') === 'on') store.updateSeries('expense', id, fields)
     else if (id) store.updateTransaction('expense', id, fields)
     else store.addExpense(fields)
@@ -1987,12 +2181,20 @@ document.addEventListener('change', (event) => {
   }
   if (el && el.id === 'main-currency') {
     store.setMainCurrency(el.value)
-    store.refreshRate().then((res) => { if (res.ok) toast('Rate updated'); render() })
+    store.refreshRate().then((res) => { if (res.ok) toast('Rates updated'); render() })
     return
   }
   if (el && el.id === 'secondary-currency') {
     store.setSecondaryCurrency(el.value)
-    store.refreshRate().then((res) => { if (res.ok) toast('Rate updated'); render() })
+    store.refreshRate().then((res) => { if (res.ok) toast('Rates updated'); render() })
+    return
+  }
+  if (el && el.dataset && el.dataset.rate) {
+    const value = Number(el.value)
+    if (!el.value || !Number.isFinite(value) || value <= 0) { toast('Enter a rate above zero'); render(); return }
+    store.setRate(el.dataset.rate, value)
+    toast('Rate saved')
+    render()
     return
   }
   if (el && el.matches && el.matches('select[data-repeat]')) {
@@ -2088,8 +2290,8 @@ applyTheme()
 render()
 
 ;(function autoRate() {
-  const s = store.getSettings()
-  const stale = !s.rateUpdatedAt || Date.now() - new Date(s.rateUpdatedAt).getTime() > 12 * 60 * 60 * 1000
+  const stamp = store.rateUpdatedAt()
+  const stale = !stamp || Date.now() - new Date(stamp).getTime() > 12 * 60 * 60 * 1000
   if (!stale) return
   store.refreshRate().then((res) => { if (res.ok) render() })
 })()
