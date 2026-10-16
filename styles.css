@@ -1680,18 +1680,41 @@ label,
 }
 
 .choose-item .avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
   display: grid;
   place-items: center;
   color: var(--wc, #06111f);
   background: var(--wc-soft, var(--card));
+  transition: transform 0.14s ease, box-shadow 0.18s ease;
 }
 
 .choose-item .avatar svg {
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
+}
+
+/* Each transaction type keeps its own accent so the four options read at a
+   glance instead of blending into one neutral tile. */
+.choose-item .avatar.income {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.choose-item .avatar.expense {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.choose-item .avatar.transfer {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.choose-item .avatar.goal {
+  background: var(--gold-soft);
+  color: var(--gold);
 }
 
 .choose-item > svg {
@@ -2138,6 +2161,21 @@ label,
   }
   .choose-item:hover {
     border-color: rgba(244, 185, 66, 0.4);
+  }
+  .choose-item:hover .avatar {
+    transform: scale(1.06);
+  }
+  .choose-item:hover .avatar.income {
+    box-shadow: 0 0 0 3px var(--green-soft);
+  }
+  .choose-item:hover .avatar.expense {
+    box-shadow: 0 0 0 3px var(--red-soft);
+  }
+  .choose-item:hover .avatar.transfer {
+    box-shadow: 0 0 0 3px var(--blue-soft);
+  }
+  .choose-item:hover .avatar.goal {
+    box-shadow: 0 0 0 3px var(--gold-soft);
   }
   .goal-add-btn:hover {
     background: var(--card);
