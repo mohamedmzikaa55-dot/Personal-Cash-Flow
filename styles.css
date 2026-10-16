@@ -1,37 +1,51 @@
 :root {
-  /* Dark green-black theme taken from the UI showcase: near-black green
-     background, emerald accent, green money. */
-  --bg: #05100b;
-  --bg-2: #081a13;
-  --card: #0d2018;
-  --card-2: #143327;
-  --line: rgba(255, 255, 255, 0.075);
-  --text: #e9f6ef;
-  --muted: #84a696;
-  --accent: #35d997;
-  --accent-strong: #6ff0b6;
-  --accent-soft: rgba(53, 217, 151, 0.16);
+  /* Dark green-black theme from the UI gallery: near-black green surfaces, a
+     muted emerald accent, soft elevation and a gradient brand ramp. */
+  --bg: #020705;
+  --bg-2: #05110b;
+  --card: #091710;
+  --card-2: #0d2118;
+  --glass: rgba(13, 33, 24, 0.62);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --line-accent: rgba(67, 207, 148, 0.34);
+  --text: #eef7f1;
+  --muted: #8ba294;
+  --faint: #6e8377;
+  --accent: #43cf94;
+  --accent-2: #16865e;
+  --accent-strong: #55d6a0;
+  --accent-soft: rgba(67, 207, 148, 0.12);
+  --grad-a: #55d6a0;
+  --grad-b: #16865e;
   /* Ink for text and icons sitting on the accent gradient. */
-  --on-accent: #04211a;
+  --on-accent: #032b1e;
+  /* Fixed dark ink for the always-bright decorative swatch gradient. */
+  --swatch-ink: #04211a;
   /* Amber is kept for "pending" and "at the limit" states. */
-  --gold: #f2b73d;
-  --gold-soft: rgba(242, 183, 61, 0.16);
-  --green: #2fd98a;
-  --green-soft: rgba(47, 217, 138, 0.16);
-  --red: #ff6b7a;
-  --red-soft: rgba(255, 107, 122, 0.15);
-  --blue: #6ea8ff;
-  --blue-soft: rgba(110, 168, 255, 0.16);
-  --purple: #a78bfa;
-  --purple-soft: rgba(167, 139, 250, 0.16);
-  --shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
-  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.24);
-  --scrim: rgba(6, 10, 20, 0.72);
+  --gold: #d6b779;
+  --gold-2: #a88143;
+  --gold-soft: rgba(214, 183, 121, 0.12);
+  --green: #57c99a;
+  --green-soft: rgba(87, 201, 154, 0.12);
+  --red: #df817b;
+  --red-soft: rgba(223, 129, 123, 0.12);
+  --blue: #88aeda;
+  --blue-soft: rgba(136, 174, 218, 0.12);
+  --purple: #a697cc;
+  --purple-soft: rgba(166, 151, 204, 0.12);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow: 0 28px 70px -24px rgba(0, 0, 0, 0.82);
+  --shadow-lg: 0 50px 110px -40px rgba(0, 0, 0, 0.9);
+  --glow: 0 16px 42px -20px rgba(53, 169, 119, 0.34);
+  --scrim: rgba(2, 11, 7, 0.7);
   --radius: 22px;
   --shell: 560px;
-  --tabbar-bg: rgba(8, 26, 19, 0.88);
-  --topbar-bg: rgba(5, 16, 11, 0.9);
+  --tabbar-bg: rgba(5, 17, 11, 0.82);
+  --topbar-bg: rgba(2, 7, 5, 0.82);
   --press: rgba(255, 255, 255, 0.04);
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -39,33 +53,45 @@
 }
 
 :root[data-theme='light'] {
-  --bg: #eaf4ef;
-  --bg-2: #ffffff;
+  --bg: #eef5f1;
+  --bg-2: #f7fbf9;
   --card: #ffffff;
-  --card-2: #e4f1ea;
-  --line: rgba(11, 40, 29, 0.10);
-  --text: #0d1f18;
-  --muted: #5d7a6c;
-  --accent: #0f9d63;
-  --accent-strong: #14b877;
-  --accent-soft: rgba(15, 157, 99, 0.12);
-  --on-accent: #04211a;
-  --gold: #a9741a;
-  --gold-soft: rgba(169, 116, 26, 0.12);
-  --green: #0f9d63;
-  --green-soft: rgba(15, 157, 99, 0.12);
-  --red: #d63f52;
-  --red-soft: rgba(214, 63, 82, 0.12);
+  --card-2: #e6f1ec;
+  --glass: rgba(255, 255, 255, 0.7);
+  --line: rgba(8, 34, 24, 0.09);
+  --line-strong: rgba(8, 34, 24, 0.16);
+  --line-accent: rgba(10, 156, 99, 0.35);
+  --text: #07160f;
+  --muted: #557268;
+  --faint: #5a7268;
+  --accent: #08794d;
+  --accent-2: #067a4c;
+  --accent-strong: #0a8050;
+  --accent-soft: rgba(8, 121, 77, 0.1);
+  --grad-a: #0a8050;
+  --grad-b: #067a4c;
+  --on-accent: #ffffff;
+  --gold: #8a5f13;
+  --gold-2: #6f4c0e;
+  --gold-soft: rgba(138, 95, 19, 0.12);
+  --green: #067a4c;
+  --green-soft: rgba(6, 122, 76, 0.1);
+  --red: #c62f42;
+  --red-soft: rgba(198, 47, 66, 0.1);
   --blue: #2f6fd0;
-  --blue-soft: rgba(47, 111, 208, 0.12);
-  --purple: #7c5cf0;
-  --purple-soft: rgba(124, 92, 240, 0.12);
-  --shadow: 0 18px 40px rgba(16, 44, 33, 0.12);
-  --shadow-soft: 0 6px 18px rgba(16, 44, 33, 0.08);
+  --blue-soft: rgba(47, 111, 208, 0.1);
+  --purple: #6d4fe0;
+  --purple-soft: rgba(109, 79, 224, 0.1);
+  --shadow-sm: 0 2px 8px rgba(12, 40, 29, 0.08);
+  --shadow-soft: 0 2px 8px rgba(12, 40, 29, 0.08);
+  --shadow: 0 26px 60px -26px rgba(12, 40, 29, 0.28);
+  --shadow-lg: 0 46px 96px -38px rgba(12, 40, 29, 0.34);
+  --glow: 0 16px 40px -18px rgba(10, 156, 99, 0.32);
   --scrim: rgba(11, 40, 29, 0.45);
-  --tabbar-bg: rgba(255, 255, 255, 0.9);
-  --topbar-bg: rgba(234, 244, 239, 0.92);
-  --press: rgba(11, 40, 29, 0.04);
+  --tabbar-bg: rgba(255, 255, 255, 0.8);
+  --topbar-bg: rgba(238, 245, 241, 0.85);
+  --press: rgba(8, 34, 24, 0.04);
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 * {
@@ -91,18 +117,65 @@
   background: transparent;
 }
 
-html,
+html {
+  background: var(--bg);
+  transition: background 0.35s ease;
+}
+
 body {
   margin: 0;
   min-height: 100%;
   height: 100%;
-  background: var(--bg);
+  /* The canvas carries the base colour (from html); the body stays transparent
+     so the ambient glow and grain layers below show through. */
+  background: transparent;
   color: var(--text);
   font-family: Outfit, system-ui, sans-serif;
+  font-feature-settings: 'ss01', 'cv01';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior-y: none;
   overflow-x: hidden;
+  transition: background 0.35s ease, color 0.35s ease;
+}
+
+/* Ambient premium glow field, as in the UI gallery. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(760px 520px at 88% -8%, rgba(67, 207, 148, 0.11), transparent 62%),
+    radial-gradient(680px 480px at 4% 8%, rgba(214, 183, 121, 0.045), transparent 60%),
+    radial-gradient(900px 700px at 50% 120%, rgba(22, 134, 94, 0.07), transparent 65%),
+    var(--bg);
+}
+
+/* Fine grain for a tactile, premium surface. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-theme='light'] body::before {
+  background:
+    radial-gradient(760px 520px at 88% -8%, rgba(10, 156, 99, 0.1), transparent 62%),
+    radial-gradient(900px 700px at 50% 120%, rgba(6, 122, 76, 0.06), transparent 65%),
+    var(--bg);
+}
+
+:root[data-theme='light'] body::after {
+  opacity: 0.022;
 }
 
 body.modal-open {
@@ -124,8 +197,13 @@ button {
 
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 10px;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 #app {
@@ -139,16 +217,8 @@ button {
   min-height: 100vh;
   min-height: 100dvh;
   padding: calc(14px + var(--safe-top)) calc(16px + var(--safe-right)) calc(120px + var(--safe-bottom)) calc(16px + var(--safe-left));
-  background:
-    radial-gradient(900px 380px at 82% -10%, rgba(53, 217, 151, 0.16), transparent 60%),
-    radial-gradient(620px 300px at -12% 8%, rgba(47, 217, 138, 0.10), transparent 55%),
-    var(--bg);
-}
-
-:root[data-theme='light'] .app-shell {
-  background:
-    radial-gradient(900px 380px at 82% -10%, rgba(15, 157, 99, 0.12), transparent 60%),
-    var(--bg);
+  /* The ambient field lives on body::before, so the shell stays transparent. */
+  background: transparent;
 }
 
 /* ---------- topbar ---------- */
@@ -216,14 +286,18 @@ p {
 
 h1 {
   font-family: Fraunces, Georgia, serif;
+  font-weight: 500;
   font-size: clamp(22px, 7vw, 30px);
   line-height: 1.1;
+  letter-spacing: -0.03em;
   overflow-wrap: anywhere;
 }
 
 h2 {
   font-family: Fraunces, Georgia, serif;
+  font-weight: 500;
   font-size: clamp(18px, 5.4vw, 21px);
+  letter-spacing: -0.02em;
 }
 
 h2 svg {
@@ -313,11 +387,11 @@ h2 svg {
 }
 
 .primary-btn {
-  background: linear-gradient(160deg, var(--accent-strong), var(--accent));
+  background: linear-gradient(160deg, var(--grad-a), var(--grad-b));
   color: var(--on-accent);
   padding: 13px 18px;
   font-size: 15px;
-  box-shadow: 0 10px 24px rgba(53, 217, 151, 0.26);
+  box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .primary-btn.full,
@@ -326,11 +400,12 @@ h2 svg {
 }
 
 .ghost-btn {
-  background: var(--card-2);
-  border: 1px solid transparent;
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line-strong);
   color: var(--text);
   padding: 11px 15px;
   font-size: 14px;
+  box-shadow: var(--shadow-sm), var(--lift);
 }
 
 .ghost-btn.compact {
@@ -350,7 +425,8 @@ h2 svg {
   height: 34px;
   padding: 0 8px;
   border-radius: 11px;
-  background: var(--card-2);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line-strong);
   color: var(--muted);
   display: inline-grid;
   place-items: center;
@@ -372,11 +448,13 @@ h2 svg {
   width: 42px;
   height: 42px;
   min-width: 42px;
-  background: var(--card-2);
-  color: var(--text);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
   font-size: 20px;
   display: grid;
   place-items: center;
+  box-shadow: var(--shadow-sm), var(--lift);
 }
 
 /* Compact arrows used by the month pager. */
@@ -474,16 +552,19 @@ h2 svg {
 }
 
 .chip {
-  background: var(--card-2);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
   color: var(--muted);
   padding: 9px 14px;
   font-size: 13px;
-  border: 1px solid transparent;
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .chip.on {
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
+  color: var(--on-accent);
+  box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .chip-row {
@@ -531,42 +612,61 @@ h2 svg {
   flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
-  background: var(--card-2);
+  background: var(--glass);
+  border: 1px solid var(--line);
   border-radius: 15px;
   width: fit-content;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .chip-row.segmented .chip {
   background: transparent;
+  border-color: transparent;
+  box-shadow: none;
   border-radius: 11px;
   padding: 8px 13px;
 }
 
 .chip-row.segmented .chip.on {
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
   color: var(--on-accent);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--glow);
 }
 
 /* ---------- hero / stats ---------- */
 .hero {
   position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(120% 140% at 12% 0%, rgba(53, 217, 151, 0.20), transparent 58%),
-    linear-gradient(160deg, var(--card-2), var(--card));
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 18px;
-  box-shadow: var(--shadow);
+  background:
+    linear-gradient(160deg, var(--card-2), var(--card) 60%) padding-box,
+    linear-gradient(160deg, var(--line-strong), var(--line) 55%, transparent) border-box;
+  box-shadow: var(--shadow-sm);
   margin-bottom: 16px;
   animation: rise 0.32s ease both;
 }
 
-:root[data-theme='light'] .hero {
-  background:
-    radial-gradient(120% 140% at 12% 0%, rgba(15, 157, 99, 0.14), transparent 58%),
-    linear-gradient(160deg, #ffffff, var(--card-2));
+/* Soft brand glow pooled in the top-left corner, as in the gallery. */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -10%;
+  width: 70%;
+  height: 130%;
+  background: radial-gradient(closest-side, rgba(62, 224, 160, 0.22), transparent);
+  pointer-events: none;
+}
+
+:root[data-theme='light'] .hero::before {
+  background: radial-gradient(closest-side, rgba(10, 156, 99, 0.16), transparent);
+}
+
+.hero > * {
+  position: relative;
 }
 
 .hero::after {
@@ -574,28 +674,33 @@ h2 svg {
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(53, 217, 151, 0.6), transparent);
+  background: linear-gradient(90deg, transparent, rgba(62, 224, 160, 0.8), transparent);
 }
 
 .hero .label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
 }
 
+/* Money display, matching the gallery's balance figure: Outfit 600, tight
+   tracking, tabular figures. */
 .hero .value {
-  font-family: Fraunces, Georgia, serif;
-  font-size: clamp(28px, 9vw, 38px);
-  line-height: 1.1;
-  margin: 4px 0 2px;
+  font-family: Outfit, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: clamp(27px, 8.6vw, 35px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums lining-nums;
+  margin: 6px 0 4px;
   overflow-wrap: anywhere;
 }
 
 .hero .sub {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .hero-top {
@@ -622,6 +727,7 @@ h2 svg {
   display: grid;
   gap: 4px;
   align-content: start;
+  box-shadow: var(--lift);
 }
 
 .tile .tile-label {
@@ -690,6 +796,7 @@ h2 svg {
   display: grid;
   place-items: center;
   flex: none;
+  box-shadow: 0 10px 26px -14px rgba(62, 224, 160, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .ring::before {
@@ -697,7 +804,7 @@ h2 svg {
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  background: var(--bg-2);
+  background: var(--card);
 }
 
 .ring span {
@@ -761,6 +868,7 @@ h2 svg {
   border-radius: 14px;
   padding: 10px 12px;
   min-width: 0;
+  box-shadow: var(--lift);
 }
 
 .stat b {
@@ -785,25 +893,30 @@ h2 svg {
 /* ---------- wallet cards (Wallets screen) ---------- */
 .wallet-card {
   position: relative;
-  background: var(--card);
-  border: 1px solid var(--line);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--wc, var(--accent)) 27%, var(--line));
   border-radius: 20px;
   padding: 14px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   gap: 12px;
   align-items: center;
-  transition: border-color 0.18s ease, transform 0.16s ease, background 0.18s ease;
+  background:
+    linear-gradient(105deg, var(--wc-soft, var(--accent-soft)), transparent 76%),
+    linear-gradient(180deg, var(--card-2), var(--card));
+  box-shadow: var(--shadow-sm), var(--lift);
+  transition: border-color 0.18s ease, transform 0.16s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* A tinted edge in the wallet's own colour, as in the showcase. */
+/* A tinted edge in the wallet's own colour, as in the gallery. */
 .wallet-card::before {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
   border-radius: 20px 0 0 20px;
-  background: var(--wc, var(--accent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wc, var(--accent)) 76%, white), var(--wc, var(--accent)));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--wc, var(--accent)) 35%, transparent);
 }
 
 .wallet-tile {
@@ -815,6 +928,7 @@ h2 svg {
   background: var(--wc-soft, var(--accent-soft));
   color: var(--wc, var(--accent));
   flex: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wc, var(--accent)) 18%, transparent);
 }
 
 .wallet-tile svg {
@@ -876,22 +990,27 @@ h2 svg {
   background: var(--card-2);
   overflow: hidden;
   margin-top: 14px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 65%, white), var(--green));
+  background: linear-gradient(90deg, var(--grad-b), var(--grad-a));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  box-shadow: 0 0 12px rgba(62, 224, 160, 0.45);
 }
 
 /* ---------- cards / lists ---------- */
 .card {
-  background: var(--card);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 14px;
+  background:
+    linear-gradient(180deg, var(--card-2), var(--card)) padding-box,
+    linear-gradient(160deg, var(--line-strong), transparent 70%) border-box;
+  box-shadow: var(--shadow-sm);
   animation: rise 0.32s ease both;
 }
 
@@ -913,7 +1032,7 @@ h2 svg {
 .list > *:nth-child(8) { animation-delay: 0.21s; }
 
 .item {
-  background: var(--card);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 13px 14px;
@@ -921,7 +1040,8 @@ h2 svg {
   grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   gap: 12px;
   align-items: center;
-  transition: border-color 0.18s ease, transform 0.16s ease, background 0.18s ease;
+  box-shadow: var(--shadow-sm), var(--lift);
+  transition: border-color 0.18s ease, transform 0.16s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .item .avatar {
@@ -933,6 +1053,7 @@ h2 svg {
   font-weight: 700;
   font-size: 16px;
   flex: none;
+  box-shadow: var(--lift);
 }
 
 .item .avatar svg {
@@ -1064,6 +1185,7 @@ h2 svg {
   place-items: center;
   background: var(--card-2);
   color: var(--muted);
+  box-shadow: var(--lift);
 }
 
 .empty-ico svg {
@@ -1073,13 +1195,16 @@ h2 svg {
 
 /* ---------- goals ---------- */
 .goal-card {
-  background: var(--card);
-  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, var(--card-2), var(--card)) padding-box,
+    linear-gradient(160deg, var(--line-strong), transparent 70%) border-box;
+  border: 1px solid transparent;
   border-radius: 18px;
   padding: 13px 14px;
   display: grid;
   gap: 10px;
-  transition: border-color 0.18s ease, transform 0.16s ease;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s ease, transform 0.16s ease, box-shadow 0.18s ease;
 }
 
 .goal-card.warn {
@@ -1124,6 +1249,7 @@ h2 svg {
   place-items: center;
   background: var(--accent-soft);
   color: var(--accent);
+  box-shadow: var(--lift);
 }
 
 .goal-card.over .goal-ico {
@@ -1347,11 +1473,11 @@ h2 svg {
   width: 56px;
   height: 56px;
   border-radius: 19px;
-  background: linear-gradient(160deg, var(--accent-strong), var(--accent));
+  background: linear-gradient(160deg, var(--grad-a), var(--grad-b));
   color: var(--on-accent);
   display: grid;
   place-items: center;
-  box-shadow: 0 14px 32px rgba(53, 217, 151, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
   z-index: 20;
 }
 
@@ -1371,35 +1497,57 @@ h2 svg {
   justify-content: space-between;
   gap: 2px;
   padding: 6px;
-  background: var(--tabbar-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-2) 78%, transparent), var(--tabbar-bg));
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid var(--line-strong);
   border-radius: 22px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 25;
 }
 
 .tab {
+  position: relative;
   flex: 1 1 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--faint);
   display: grid;
   justify-items: center;
   gap: 3px;
   padding: 8px 2px;
   font-size: 10.5px;
   border-radius: 16px;
+  transition: color 0.2s ease;
 }
 
 .tab svg {
   width: 21px;
   height: 21px;
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 .tab.active {
   color: var(--accent);
+  font-weight: 700;
   background: var(--accent-soft);
+}
+
+.tab.active svg {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 3px 8px rgba(62, 224, 160, 0.5));
+}
+
+.tab.active::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  box-shadow: 0 2px 10px rgba(62, 224, 160, 0.7);
 }
 
 /* ---------- modal / form ---------- */
@@ -1424,10 +1572,13 @@ h2 svg {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  background: var(--card);
+  border: 1px solid transparent;
   border-radius: 26px 26px 0 0;
   padding: 18px calc(16px + var(--safe-right)) calc(22px + var(--safe-bottom)) calc(16px + var(--safe-left));
-  box-shadow: var(--shadow);
+  background:
+    linear-gradient(180deg, var(--card-2), var(--card)) padding-box,
+    linear-gradient(160deg, var(--line-strong), transparent 60%) border-box;
+  box-shadow: var(--shadow-lg);
   animation: sheet-up 0.26s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
@@ -1448,7 +1599,7 @@ h2 svg {
   width: 44px;
   height: 5px;
   border-radius: 999px;
-  background: var(--card-2);
+  background: var(--line-strong);
   margin: 0 auto 14px;
 }
 
@@ -1473,8 +1624,8 @@ label {
 input,
 textarea,
 select {
-  background: var(--card-2);
-  border: 1px solid var(--line);
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
   border-radius: 13px;
   padding: 11px 13px;
   color: var(--text);
@@ -1484,6 +1635,7 @@ select {
   min-height: 46px;
   -webkit-appearance: none;
   appearance: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
@@ -1520,8 +1672,8 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--gold-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 input::placeholder,
@@ -1604,8 +1756,8 @@ label,
   border-radius: 12px;
   border: 2px solid transparent;
   background: var(--sw, var(--accent));
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
-  transition: transform 0.14s ease, border-color 0.16s ease;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18), 0 6px 14px -8px color-mix(in srgb, var(--sw, var(--accent)) 70%, transparent);
+  transition: transform 0.14s ease, border-color 0.16s ease, box-shadow 0.16s ease;
   padding: 0;
 }
 
@@ -1620,8 +1772,8 @@ label,
   position: relative;
   overflow: hidden;
   cursor: pointer;
-  background: conic-gradient(from 210deg, #f87171, #f2b73d, #a3e635, #35d997, #38bdf8, #6ea8ff, #e879f9, #f87171);
-  box-shadow: inset 0 0 0 4px var(--sw, #35d997);
+  background: conic-gradient(from 210deg, #f87171, #d6b779, #a3e635, #43cf94, #38bdf8, #88aeda, #e879f9, #f87171);
+  box-shadow: inset 0 0 0 4px var(--sw, var(--accent));
 }
 
 .swatch.custom.on {
@@ -1630,12 +1782,12 @@ label,
 
 /* The "automatic" swatch: the app picks the colour from the wallet name. */
 .swatch.auto {
-  background: linear-gradient(135deg, #35d997, #6ea8ff 48%, #f472b6);
+  background: linear-gradient(135deg, #55d6a0, #88aeda 48%, #e879f9);
   display: grid;
   place-items: center;
   font-size: 12px;
   font-weight: 800;
-  color: var(--on-accent);
+  color: var(--swatch-ink);
   letter-spacing: -0.02em;
 }
 
@@ -1656,11 +1808,11 @@ label,
   border-radius: 13px;
   display: grid;
   place-items: center;
-  background: var(--card-2);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
   color: var(--muted);
-  border: 1px solid transparent;
+  border: 1px solid var(--line-strong);
   padding: 0;
-  transition: transform 0.14s ease, background 0.16s ease, color 0.16s ease;
+  transition: transform 0.14s ease, background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
 }
 
 .icon-pick svg {
@@ -1687,12 +1839,13 @@ label,
   gap: 12px;
   align-items: center;
   text-align: left;
-  background: var(--card-2);
-  border: 1px solid transparent;
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 11px 13px;
   color: var(--text);
-  transition: transform 0.14s ease, border-color 0.18s ease, background 0.18s ease;
+  box-shadow: var(--shadow-sm), var(--lift);
+  transition: transform 0.14s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .choose-item .avatar {
@@ -1703,6 +1856,7 @@ label,
   place-items: center;
   color: var(--wc, var(--text));
   background: var(--wc-soft, var(--card));
+  box-shadow: var(--lift);
   transition: transform 0.14s ease, box-shadow 0.18s ease;
 }
 
@@ -1758,10 +1912,11 @@ label,
   display: grid;
   gap: 9px;
   padding: 13px 14px;
-  background: var(--card);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
   border: 1px solid var(--line);
   border-radius: 18px;
-  transition: border-color 0.18s ease;
+  box-shadow: var(--shadow-sm), var(--lift);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .budget-row .top {
@@ -1838,6 +1993,7 @@ label,
   place-items: center;
   background: var(--accent-soft);
   color: var(--accent);
+  box-shadow: var(--lift);
 }
 
 .budget-row .top > svg {
@@ -1854,9 +2010,10 @@ label,
 
 .repeat-disclosure {
   padding: 12px;
-  background: var(--card);
+  background: linear-gradient(180deg, var(--card-2), var(--card));
   border: 1px solid var(--line);
   border-radius: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 .repeat-disclosure > summary {
@@ -1893,23 +2050,27 @@ label,
   border-radius: 999px;
   background: var(--card-2);
   overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .bar > span {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 65%, white), var(--green));
+  background: linear-gradient(90deg, var(--grad-b), var(--grad-a));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  box-shadow: 0 0 12px rgba(62, 224, 160, 0.45);
 }
 
 .bar > span.warn {
-  background: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 60%, white));
+  background: linear-gradient(90deg, var(--gold-2), var(--gold));
+  box-shadow: 0 0 12px rgba(214, 183, 121, 0.45);
 }
 
 .bar > span.over {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 60%, white), var(--red));
+  background: linear-gradient(90deg, var(--red), color-mix(in srgb, var(--red) 60%, white));
+  box-shadow: 0 0 12px rgba(223, 129, 123, 0.45);
 }
 
 /* ---------- chart ---------- */
@@ -2129,29 +2290,37 @@ label,
 @media (hover: hover) and (pointer: fine) {
   .item:hover,
   .goal-card:hover,
-  .budget-row:hover {
-    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  .budget-row:hover,
+  .wallet-card:hover {
+    border-color: var(--line-accent);
+    box-shadow: var(--shadow-sm), var(--glow);
+  }
+  .wallet-card:hover {
+    border-color: color-mix(in srgb, var(--wc, var(--accent)) 45%, var(--line));
   }
   .item:hover,
   .choose-item:hover {
     transform: translateY(-1px);
   }
   .primary-btn:hover {
-    filter: brightness(1.05);
+    filter: brightness(1.06);
   }
   .ghost-btn:hover,
   .mini-btn:hover,
-  .icon-btn:hover,
+  .icon-btn:hover {
+    border-color: var(--line-accent);
+  }
   .chip:hover {
-    background: var(--card);
-    border-color: var(--line);
+    border-color: var(--line-accent);
+    color: var(--text);
+    transform: translateY(-1px);
   }
   .chip.on:hover,
   .chip-row.segmented .chip.on:hover {
-    background: var(--card);
+    filter: brightness(1.06);
   }
   .choose-item:hover {
-    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+    border-color: var(--line-accent);
   }
   .choose-item:hover .avatar {
     transform: scale(1.06);

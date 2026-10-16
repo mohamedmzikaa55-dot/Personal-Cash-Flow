@@ -1918,7 +1918,7 @@ function toast(message) {
 function applyTheme() {
   document.documentElement.dataset.theme = store.getTheme()
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = store.getTheme() === 'light' ? '#f2f4f9' : '#0b1220'
+  if (meta) meta.content = store.getTheme() === 'light' ? '#eef5f1' : '#020705'
 }
 
 // ---------- events ----------

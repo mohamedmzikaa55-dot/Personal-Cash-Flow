@@ -15,10 +15,11 @@ export const CATEGORY_ICONS = [
   'music', 'dumbbell', 'health', 'pill', 'book', 'shirt', 'gift', 'plane',
   'piggy', 'coins', 'pet', 'baby', 'wifi', 'phone', 'game'
 ]
-// Colours offered when picking a wallet's tile colour.
+// Colours offered when picking a wallet's tile colour. Muted to match the UI
+// gallery palette so tiles sit naturally on the near-black green surfaces.
 export const WALLET_COLORS = [
-  '#35d997', '#6ea8ff', '#a78bfa', '#ff8a5c', '#f2b73d', '#f472b6',
-  '#38bdf8', '#fb923c', '#a3e635', '#f87171', '#2dd4bf', '#e879f9'
+  '#43cf94', '#88aeda', '#a697cc', '#d6b779', '#df817b', '#68b5a1',
+  '#c7a669', '#86aaca', '#56c497', '#cf807a', '#a798c9', '#d98fb8'
 ]
 
 // Currencies a wallet's second balance can be kept in. `$`/`E£`/`€`/`£` are
@@ -33,10 +34,12 @@ export const CURRENCY_CHOICES = [
   'NGN', 'KES', 'GHS', 'SGD', 'MYR', 'IDR', 'THB', 'PHP', 'KRW', 'MXN'
 ]
 
+// Fallback colours for categories without a saved one, in the same muted range
+// as the gallery so charts and tiles stay on-palette.
 const PALETTE = [
-  '#5b8cff', '#a06bff', '#22b07d', '#e8a51c', '#14b8a6',
-  '#f472b6', '#38bdf8', '#fb923c', '#a3e635', '#facc15',
-  '#e879f9', '#f87171', '#60a5fa'
+  '#43cf94', '#88aeda', '#a697cc', '#d6b779', '#df817b', '#68b5a1',
+  '#c7a669', '#86aaca', '#57c99a', '#cf807a', '#a798c9', '#d98fb8',
+  '#88aeda'
 ]
 
 // Seed data mirrors the Notion export this app was built from: the wallet
