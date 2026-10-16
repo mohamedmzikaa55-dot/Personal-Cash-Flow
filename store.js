@@ -6,6 +6,13 @@ const STORAGE_KEY = 'personal-cash-flow-v1'
 export const WALLET_TYPES = ['In Hand', 'Digital Wallet', 'Safe']
 export const WALLET_STATUS = ['Available', 'Freezed']
 export const WALLET_CURRENCY = ['', '$', 'E£', 'EGP', '€', 'SAR', 'AED']
+// Glyphs a wallet's tile can show. The names map to SVGs in app.js.
+export const WALLET_ICONS = ['wallet', 'cash', 'card', 'bank', 'safe', 'phone', 'piggy', 'gem']
+// Colours offered when picking a wallet's tile colour.
+export const WALLET_COLORS = [
+  '#35d997', '#6ea8ff', '#a78bfa', '#ff8a5c', '#f2b73d', '#f472b6',
+  '#38bdf8', '#fb923c', '#a3e635', '#f87171', '#2dd4bf', '#e879f9'
+]
 
 // Currencies a wallet's second balance can be kept in. `$`/`E£`/`€`/`£` are
 // shown as symbols because that is how they appear in the exports, but every
@@ -182,9 +189,14 @@ function normName(value) {
   return str(value, 120).toLowerCase()
 }
 
-function clampColor(color, index) {
+// A "#rgb"-style colour, or '' when nothing usable was given.
+function hexColor(color) {
   const c = str(color, 20)
-  return /^#[0-9a-f]{3,8}$/i.test(c) ? c : PALETTE[index % PALETTE.length]
+  return /^#[0-9a-f]{3,8}$/i.test(c) ? c : ''
+}
+
+function clampColor(color, index) {
+  return hexColor(color) || PALETTE[index % PALETTE.length]
 }
 
 // The ISO code a currency symbol or code maps to, so "$" and "USD" land on the
@@ -246,6 +258,10 @@ function normalizeWallet(wallet) {
     // A second balance kept in another currency, converted with the saved rate.
     foreign: parseMoney(wallet.foreign),
     currency: sanitizeCurrency(wallet.currency),
+    // The wallet's own tile look. Empty means "derive it": the colour from the
+    // wallet's name, the glyph from its type.
+    color: hexColor(wallet.color),
+    icon: WALLET_ICONS.includes(str(wallet.icon, 20)) ? str(wallet.icon, 20) : '',
     note: str(wallet.note, 200)
   }
 }

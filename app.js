@@ -1,4 +1,4 @@
-import { store, WALLET_TYPES, WALLET_STATUS, WALLET_CURRENCY } from './store.js'
+import { store, WALLET_TYPES, WALLET_STATUS, WALLET_CURRENCY, WALLET_ICONS, WALLET_COLORS } from './store.js'
 
 const app = document.getElementById('app')
 
@@ -230,6 +230,9 @@ function icon(name) {
     card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/></svg>',
     bank: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9"/><path d="M3 20h18"/></svg>',
     safe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="12" cy="12" r="3.4"/><path d="M12 5.5v3M12 15.5v3"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>',
+    piggy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13a6 6 0 0 1 6-6h4.5a5.5 5.5 0 0 1 5.5 5.5V15a2 2 0 0 1-2 2h-1v1.5a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1V18H9v1.5a1 1 0 0 1-1 1H6.8a1 1 0 0 1-1-1V17.6A5.4 5.4 0 0 1 4 14.6V13Z"/><path d="M8.5 8 7 4.5M15.5 12h.01"/></svg>',
+    gem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l3 5-9 13L3 8l3-5Z"/><path d="M3 8h18M9.5 8 12 21 14.5 8M6 3l3.5 5M18 3l-3.5 5"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
   }
   return icons[name] || ''
@@ -381,15 +384,11 @@ function renderDashboard() {
   `
 }
 
-// Wallet colours: the palette the app already assigns to categories, so every
-// wallet card in the list gets its own tile colour like the showcase.
-const WALLET_COLORS = [
-  '#35d997', '#6ea8ff', '#a78bfa', '#ff8a5c', '#f2b73d',
-  '#f472b6', '#38bdf8', '#fb923c', '#a3e635', '#f87171', '#2dd4bf'
-]
-
+// Wallet colours: the palette the app assigns to categories too, so every
+// wallet card in the list gets its own tile colour.
 // Stable per wallet name, so a restored backup keeps the same colours.
 function walletColor(wallet) {
+  if (wallet && wallet.color) return wallet.color
   const key = String((wallet && (wallet.name || wallet.id)) || '')
   let sum = 0
   for (let i = 0; i < key.length; i += 1) sum = (sum + key.charCodeAt(i) * (i + 1)) % 9973
@@ -405,12 +404,18 @@ function softColor(hex, alpha) {
   return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha == null ? 0.16 : alpha})`
 }
 
-// Glyph for the wallet's type, falling back to the generic wallet icon.
+// Glyph for the wallet's type, used when the user has not picked an icon.
 function walletTypeIcon(wallet) {
   const type = String(wallet && wallet.type || '')
   if (type === 'Safe') return icon('safe')
   if (type === 'Digital Wallet') return icon('card')
   return icon('cash')
+}
+
+// The wallet's glyph: the icon the user picked, else one for its type.
+function walletIcon(wallet) {
+  if (wallet && wallet.icon && WALLET_ICONS.includes(wallet.icon)) return icon(wallet.icon)
+  return walletTypeIcon(wallet)
 }
 
 function walletCardStyle(wallet) {
@@ -422,7 +427,7 @@ function walletAvatar(wallet) {
   const frozen = wallet.status === 'Freezed'
   const color = frozen ? 'var(--muted)' : walletColor(wallet)
   const background = frozen ? 'var(--card-2)' : softColor(color)
-  return `<span class="avatar ${frozen ? 'frozen' : ''}" style="background:${background};color:${color}">${walletTypeIcon(wallet)}</span>`
+  return `<span class="avatar ${frozen ? 'frozen' : ''}" style="background:${background};color:${color}">${walletIcon(wallet)}</span>`
 }
 
 // Explain what a wallet's second-currency balance is worth in the main
@@ -984,7 +989,7 @@ function walletDetailRow(wallet) {
   }
   return `
     <article class="wallet-card" style="${walletCardStyle(wallet)}" data-action="open-wallet" data-id="${wallet.id}">
-      <span class="wallet-tile">${walletTypeIcon(wallet)}</span>
+      <span class="wallet-tile">${walletIcon(wallet)}</span>
       <div class="body">
         <div class="wallet-name">${escapeHtml(wallet.name)}</div>
         <div class="wallet-kind">
@@ -1021,6 +1026,7 @@ function renderWalletDetail() {
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
         <button class="icon-btn" data-action="wallet-back" aria-label="Back">${icon('left')}</button>
+        <span class="wallet-tile sm" style="${wallet.status === 'Freezed' ? '--wc:var(--muted);--wc-soft:var(--card-2)' : walletCardStyle(wallet)}">${walletIcon(wallet)}</span>
         <div>
           <p class="kicker">${escapeHtml(wallet.type)}</p>
           <h1 style="font-size:24px">${escapeHtml(wallet.name)}</h1>
@@ -1566,6 +1572,25 @@ function renderModal() {
         </select></label>
       </div>
       <p class="muted tight" id="wallet-foreign-hint" style="margin-top:-4px">${walletForeignHint(w)}</p>
+      <div class="seg-field">
+        <span class="seg-label">Tile colour</span>
+        <div class="swatch-row">
+          <button type="button" class="swatch auto ${w.color ? '' : 'on'}" data-action="wallet-auto-color" title="Automatic colour" aria-label="Automatic colour">A</button>
+          ${WALLET_COLORS.map((c) => `<button type="button" class="swatch ${w.color === c ? 'on' : ''}" data-action="wallet-color" data-value="${c}" style="--sw:${c}" aria-label="Colour ${c}"></button>`).join('')}
+          <label class="swatch custom ${w.color && !WALLET_COLORS.includes(w.color) ? 'on' : ''}" title="Custom colour" style="--sw:${escapeHtml(w.color || '#35d997')}">
+            <input type="color" data-wallet-color value="${escapeHtml(w.color || '#35d997')}" aria-label="Custom colour" />
+          </label>
+          <input type="hidden" name="color" value="${escapeHtml(w.color || '')}" />
+        </div>
+      </div>
+      <div class="seg-field">
+        <span class="seg-label">Tile icon</span>
+        <div class="icon-row" id="wallet-icon-row">
+          ${WALLET_ICONS.map((name) => `<button type="button" class="icon-pick ${w.icon === name ? 'on' : ''}" data-action="wallet-icon" data-value="${name}" aria-label="${name}">${icon(name)}</button>`).join('')}
+          <input type="hidden" name="icon" value="${escapeHtml(w.icon || '')}" />
+        </div>
+        <p class="muted tight" id="wallet-look-hint">Pick a colour and an icon. Tap “A” or the chosen icon again to let the app decide from the wallet's name and type.</p>
+      </div>
     `
   } else if (modal === 'category') {
     const c = modalPayload || {}
@@ -1816,6 +1841,17 @@ function render() {
     hintTargets.forEach((field) => field.addEventListener('input', refreshWalletForeignHint))
     const currencyField = walletForm.querySelector('select[name="currency"]')
     if (currencyField) currencyField.addEventListener('change', refreshWalletForeignHint)
+    // A custom colour from the native picker takes over from the swatches.
+    const colorField = walletForm.querySelector('input[data-wallet-color]')
+    if (colorField) colorField.addEventListener('input', () => {
+      const row = colorField.closest('.swatch-row')
+      if (!row) return
+      const hidden = row.querySelector('input[name="color"]')
+      if (hidden) hidden.value = colorField.value
+      const label = colorField.closest('.swatch')
+      if (label) label.style.setProperty('--sw', colorField.value)
+      row.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('on', s === label))
+    })
   }
   scheduleDueRefresh()
 }
@@ -1886,6 +1922,28 @@ document.addEventListener('click', (event) => {
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
+  if (action === 'wallet-color' || action === 'wallet-auto-color') {
+    const row = actionEl.closest('.swatch-row')
+    if (!row) return
+    const field = row.querySelector('input[name="color"]')
+    if (field) field.value = action === 'wallet-color' ? actionEl.dataset.value : ''
+    row.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('on', s === actionEl))
+    return
+  }
+  if (action === 'wallet-icon') {
+    const row = actionEl.closest('.icon-row')
+    if (!row) return
+    const hidden = row.querySelector('input[name="icon"]')
+    // Tapping the active icon clears it, back to the glyph for the wallet type.
+    const next = hidden && hidden.value === actionEl.dataset.value ? '' : actionEl.dataset.value
+    if (hidden) hidden.value = next
+    row.querySelectorAll('.icon-pick').forEach((b) => b.classList.toggle('on', b.dataset.value === next))
+    const hint = document.getElementById('wallet-look-hint')
+    if (hint) hint.textContent = next
+      ? `Showing the “${next}” icon on this wallet's tile.`
+      : "Pick a colour and an icon. Tap “A” or the chosen icon again to let the app decide from the wallet's name and type."
+    return
+  }
   if (action === 'goal-mode') {
     const wrap = actionEl.closest('.seg-field')
     if (!wrap) return
@@ -2157,7 +2215,7 @@ document.addEventListener('submit', (event) => {
   const num = (key) => store.parseMoney(get(key))
 
   if (type === 'wallet') {
-    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency') }
+    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency'), color: get('color'), icon: get('icon') }
     if (!fields.name) return
     if (id) store.updateWallet(id, fields)
     else store.addWallet(fields)
