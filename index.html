@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0B1220" />
     <meta name="color-scheme" content="dark light" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -31,5 +31,14 @@
     </div>
     <noscript><p style="text-align:center">Personal Cash Flow needs JavaScript enabled.</p></noscript>
     <script type="module" src="./app.js"></script>
+    <script>
+      // Boot watchdog: if the app module never renders (it failed to load or
+      // crashed on start), reveal the recovery panel instead of a blank screen.
+      window.setTimeout(function () {
+        var shell = document.getElementById('app')
+        var panel = document.getElementById('boot-error')
+        if (panel && shell && !shell.hasChildNodes()) panel.hidden = false
+      }, 6000)
+    </script>
   </body>
 </html>

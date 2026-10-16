@@ -11,6 +11,8 @@
   --accent: #35d997;
   --accent-strong: #6ff0b6;
   --accent-soft: rgba(53, 217, 151, 0.16);
+  /* Ink for text and icons sitting on the accent gradient. */
+  --on-accent: #04211a;
   /* Amber is kept for "pending" and "at the limit" states. */
   --gold: #f2b73d;
   --gold-soft: rgba(242, 183, 61, 0.16);
@@ -24,6 +26,7 @@
   --purple-soft: rgba(167, 139, 250, 0.16);
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
   --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.24);
+  --scrim: rgba(6, 10, 20, 0.72);
   --radius: 22px;
   --shell: 560px;
   --tabbar-bg: rgba(8, 26, 19, 0.88);
@@ -44,8 +47,9 @@
   --text: #0d1f18;
   --muted: #5d7a6c;
   --accent: #0f9d63;
-  --accent-strong: #0b7d4f;
+  --accent-strong: #14b877;
   --accent-soft: rgba(15, 157, 99, 0.12);
+  --on-accent: #04211a;
   --gold: #a9741a;
   --gold-soft: rgba(169, 116, 26, 0.12);
   --green: #0f9d63;
@@ -58,6 +62,7 @@
   --purple-soft: rgba(124, 92, 240, 0.12);
   --shadow: 0 18px 40px rgba(16, 44, 33, 0.12);
   --shadow-soft: 0 6px 18px rgba(16, 44, 33, 0.08);
+  --scrim: rgba(11, 40, 29, 0.45);
   --tabbar-bg: rgba(255, 255, 255, 0.9);
   --topbar-bg: rgba(234, 244, 239, 0.92);
   --press: rgba(11, 40, 29, 0.04);
@@ -309,7 +314,7 @@ h2 svg {
 
 .primary-btn {
   background: linear-gradient(160deg, var(--accent-strong), var(--accent));
-  color: #04211a;
+  color: var(--on-accent);
   padding: 13px 18px;
   font-size: 15px;
   box-shadow: 0 10px 24px rgba(53, 217, 151, 0.26);
@@ -539,7 +544,7 @@ h2 svg {
 
 .chip-row.segmented .chip.on {
   background: var(--accent);
-  color: #04211a;
+  color: var(--on-accent);
   box-shadow: var(--shadow-soft);
 }
 
@@ -637,7 +642,7 @@ h2 svg {
 
 .tile.income {
   background: linear-gradient(170deg, var(--green-soft), transparent 70%), var(--bg-2);
-  border-color: rgba(47, 217, 138, 0.24);
+  border-color: color-mix(in srgb, var(--green) 24%, transparent);
 }
 
 .tile.income .tile-label,
@@ -647,7 +652,7 @@ h2 svg {
 
 .tile.expense {
   background: linear-gradient(170deg, var(--red-soft), transparent 70%), var(--bg-2);
-  border-color: rgba(255, 107, 122, 0.22);
+  border-color: color-mix(in srgb, var(--red) 22%, transparent);
 }
 
 .tile.expense .tile-label,
@@ -661,16 +666,18 @@ h2 svg {
   overflow-wrap: anywhere;
 }
 
-/* Save-rate ring: a conic gradient ring with the percentage inside. */
+/* Save-rate ring: a conic gradient ring with the percentage inside. The tile
+   stacks label / ring / caption so the caption never collapses into a
+   one-character column on a narrow phone. */
 .tile.rate {
+  grid-template-columns: 1fr;
   justify-items: center;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
+  align-content: start;
+  gap: 6px;
 }
 
 .tile.rate .tile-label {
-  grid-column: 1 / -1;
+  grid-column: 1;
 }
 
 .ring {
@@ -702,6 +709,9 @@ h2 svg {
 .tile.rate .tile-figure {
   font-size: 13px;
   color: var(--muted);
+  text-align: center;
+  overflow-wrap: normal;
+  max-width: 100%;
 }
 
 /* A month that spends more than it earns turns the ring and its caption red,
@@ -860,11 +870,6 @@ h2 svg {
   color: var(--red);
 }
 
-.wallet-figure .wallet-note {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
 .progress-track {
   height: 10px;
   border-radius: 999px;
@@ -876,7 +881,7 @@ h2 svg {
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #23c178, var(--green));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 65%, white), var(--green));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
@@ -1078,12 +1083,12 @@ h2 svg {
 }
 
 .goal-card.warn {
-  border-color: rgba(244, 185, 66, 0.38);
+  border-color: color-mix(in srgb, var(--gold) 38%, transparent);
   background: linear-gradient(180deg, var(--gold-soft), transparent 58%), var(--card);
 }
 
 .goal-card.over {
-  border-color: rgba(255, 107, 122, 0.42);
+  border-color: color-mix(in srgb, var(--red) 42%, transparent);
   background: linear-gradient(180deg, var(--red-soft), transparent 58%), var(--card);
 }
 
@@ -1220,7 +1225,7 @@ h2 svg {
   gap: 9px;
   padding: 13px 16px;
   border-radius: 16px;
-  border: 1px dashed rgba(53, 217, 151, 0.45);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: 14px;
@@ -1343,7 +1348,7 @@ h2 svg {
   height: 56px;
   border-radius: 19px;
   background: linear-gradient(160deg, var(--accent-strong), var(--accent));
-  color: #04211a;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   box-shadow: 0 14px 32px rgba(53, 217, 151, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.4);
@@ -1401,7 +1406,7 @@ h2 svg {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(6, 10, 20, 0.72);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex;
@@ -1630,7 +1635,7 @@ label,
   place-items: center;
   font-size: 12px;
   font-weight: 800;
-  color: #04211a;
+  color: var(--on-accent);
   letter-spacing: -0.02em;
 }
 
@@ -1666,7 +1671,7 @@ label,
 .icon-pick.on {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: rgba(53, 217, 151, 0.4);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* ---------- choose sheet ---------- */
@@ -1696,7 +1701,7 @@ label,
   border-radius: 13px;
   display: grid;
   place-items: center;
-  color: var(--wc, #06111f);
+  color: var(--wc, var(--text));
   background: var(--wc-soft, var(--card));
   transition: transform 0.14s ease, box-shadow 0.18s ease;
 }
@@ -1883,25 +1888,6 @@ label,
   gap: 7px;
 }
 
-.repeat-occurrences {
-  margin-top: 8px;
-  display: grid;
-  gap: 4px;
-}
-
-.repeat-occurrence {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  flex-wrap: wrap;
-}
-
-.repeat-occurrence .badge {
-  font-size: 10px;
-  padding: 1px 6px;
-}
-
 .bar {
   height: 9px;
   border-radius: 999px;
@@ -1913,17 +1899,17 @@ label,
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #23c178, var(--green));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 65%, white), var(--green));
   transform-origin: left center;
   animation: bar-in 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
 .bar > span.warn {
-  background: linear-gradient(90deg, var(--gold), #ffca5c);
+  background: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 60%, white));
 }
 
 .bar > span.over {
-  background: linear-gradient(90deg, #ff5d6e, var(--red));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 60%, white), var(--red));
 }
 
 /* ---------- chart ---------- */
@@ -2012,12 +1998,6 @@ label,
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
-.divider {
-  height: 1px;
-  background: var(--line);
-  margin: 4px 0;
-}
-
 .mono {
   font-variant-numeric: tabular-nums;
 }
@@ -2101,7 +2081,7 @@ label,
 }
 
 .cal-day.edited {
-  border-color: rgba(244, 185, 66, 0.45);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
 }
 
 .cal-day.sel {
@@ -2150,7 +2130,7 @@ label,
   .item:hover,
   .goal-card:hover,
   .budget-row:hover {
-    border-color: rgba(244, 185, 66, 0.4);
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
   }
   .item:hover,
   .choose-item:hover {
@@ -2171,7 +2151,7 @@ label,
     background: var(--card);
   }
   .choose-item:hover {
-    border-color: rgba(244, 185, 66, 0.4);
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
   }
   .choose-item:hover .avatar {
     transform: scale(1.06);
@@ -2201,6 +2181,34 @@ label,
   .chart-bars i:hover {
     filter: brightness(1.18);
   }
+}
+
+/* Shown by the boot watchdog in index.html when the app module never renders,
+   so a failed load is a clear message instead of a blank screen. */
+#boot-error {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 20px;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+#boot-error[hidden] {
+  display: none;
+}
+
+#boot-error h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+#boot-error p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 @media (prefers-reduced-motion: reduce) {

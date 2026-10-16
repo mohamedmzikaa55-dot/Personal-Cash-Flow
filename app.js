@@ -368,7 +368,7 @@ function renderDashboard() {
         </div>
         <div class="tile rate ${summary.net < 0 ? 'neg' : ''}">
           <span class="tile-label">Save rate</span>
-          <span class="ring" role="img" aria-label="Save rate ${summary.rate}%" style="--p:${Math.max(0, Math.min(100, summary.rate))}%"><span>${summary.rate}%</span></span>
+          <span class="ring" role="img" aria-label="Save rate ${summary.rate}%" style="--p:${summary.net < 0 ? 100 : Math.max(0, Math.min(100, summary.rate))}%"><span>${summary.rate}%</span></span>
           <span class="tile-figure">${summary.net < 0 ? `${money(Math.abs(summary.net))} over` : `${money(summary.net)} kept`}</span>
         </div>
       </div>
@@ -823,7 +823,7 @@ function renderTransactions() {
     <div class="filter-bar">
       <div class="search-field">
         ${icon('search')}
-        <input id="tx-search" type="text" placeholder="Search description, category, wallet, amount…" value="${escapeHtml(txSearch)}" autocomplete="off" />
+        <input id="tx-search" type="text" placeholder="Search description, category, wallet, amount…" aria-label="Search transactions" value="${escapeHtml(txSearch)}" autocomplete="off" />
         <button class="search-clear" type="button" data-action="clear-search" aria-label="Clear search" tabindex="-1">${icon('close')}</button>
       </div>
       <div class="chip-row segmented">
@@ -2014,21 +2014,26 @@ document.addEventListener('click', (event) => {
   if (action === 'check-update') {
     if (!('serviceWorker' in navigator)) { toast('Updates are not supported in this browser'); return }
     toast('Checking for updates…')
-    bustSwScript()
-      // Register on demand so the button still works when the load-time
-      // registration has not resolved yet (or failed).
-      .then(() => (swReg ? swReg.update() : navigator.serviceWorker.register('./sw.js')))
-      .then((reg) => {
-        if (reg && typeof reg.update === 'function') swReg = reg
-        if (!swReg) { toast('Could not check for updates'); return }
-        // A worker is waiting (already downloaded) or still downloading — either
-        // way there is something new to hand over.
-        if (swReg.waiting) { applyUpdate(swReg.waiting); return }
-        if (swReg.installing) {
-          toast('Downloading the new version…')
-          whenWorkerInstalled(swReg.installing, () => {
-            applyUpdate(swReg.waiting || swReg.installing)
-          }, () => toast('Update failed — try again in a moment'))
+    ensureRegistration()
+      .then(() => checkForUpdate())
+      .then(async (state) => {
+        if (state === 'none') { toast('Updates are not supported in this browser'); return }
+        if (state === 'failed') { toast('Update check failed — try again in a moment'); return }
+        if (state === 'ready') {
+          const worker = swReg && (swReg.waiting || swReg.installing)
+          if (worker) applyUpdate(worker)
+          else window.location.reload()
+          return
+        }
+        // The browser found nothing through the normal path. Before telling the
+        // user they are current, prove it against the server: if sw.js there is
+        // a different release than the worker running this page, the update path
+        // is stuck and a hard refresh is what actually gets them the new files.
+        const serverVersion = swVersionOf(await fetchSwScript())
+        const runningVersion = await runningSwVersion()
+        if (serverVersion && runningVersion && serverVersion !== runningVersion) {
+          toast('New version found — refreshing')
+          forceRefresh()
           return
         }
         toast('App is up to date')
@@ -2509,7 +2514,10 @@ let updateReloaded = false
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
+    // updateViaCache: 'none' keeps the worker script itself out of the HTTP
+    // cache, so an update check on a host that caches .js for a long time still
+    // sees the new release instead of the stale copy.
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
       swReg = reg
       if (reg.waiting) toast('Update ready — tap Check for update in Settings')
       reg.addEventListener('updatefound', () => {
@@ -2532,15 +2540,107 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-// Re-fetch sw.js bypassing the HTTP cache. Without this a cached copy can be
-// served to the update check, which then compares identical bytes and reports
-// "App is up to date" even though a new release is on the server.
-function bustSwScript() {
+// Register on demand so the button still works when the load-time registration
+// has not resolved yet (or failed). updateViaCache: 'none' keeps the worker
+// script out of the HTTP cache, so a host that caches .js for a long time still
+// hands the update check the new release.
+function ensureRegistration() {
+  if (swReg) return Promise.resolve(swReg)
+  return navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+    .then((reg) => { if (reg) swReg = reg; return swReg })
+    .catch(() => swReg)
+}
+
+// The version constant baked into a copy of sw.js.
+function swVersionOf(text) {
+  const m = String(text || '').match(/VERSION\s*=\s*['"]([^'"]+)['"]/)
+  return m ? m[1] : ''
+}
+
+// sw.js straight from the server, bypassing the HTTP cache. The worker itself
+// never caches sw.js, so this reaches the network.
+function fetchSwScript() {
+  return fetch('./sw.js', { cache: 'reload' })
+    .then((res) => (res && res.ok ? res.text() : ''))
+    .catch(() => '')
+}
+
+// The version of the worker that is actually running this page. Answered over a
+// MessageChannel, so a worker too old to know the message simply times out.
+function runningSwVersion(timeout = 1500) {
+  const target = navigator.serviceWorker.controller || (swReg && swReg.active)
+  if (!target) return Promise.resolve('')
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    let done = false
+    const finish = (value) => { if (done) return; done = true; resolve(value) }
+    channel.port1.onmessage = (event) => {
+      const data = event.data || {}
+      finish(data.type === 'VERSION' ? String(data.version || '') : '')
+    }
+    setTimeout(() => finish(''), timeout)
+    try { target.postMessage({ type: 'GET_VERSION' }, [channel.port2]) } catch { finish('') }
+  })
+}
+
+// Ask the browser to re-check the worker script and resolve only when the answer
+// is unambiguous:
+//   'ready'    — a new or already-installed worker can take over
+//   'uptodate' — the browser checked and found nothing new
+//   'failed'   — the check errored, or the new worker went redundant
+//   'none'     — there is no registration to check
+// registration.update()'s own promise settles the moment the *check* finishes,
+// often a beat before `registration.installing` is populated — trusting that
+// alone is what used to flash "App is up to date" the instant a real update
+// appeared.
+function checkForUpdate() {
+  const reg = swReg
+  if (!reg) return Promise.resolve('none')
+  return new Promise((resolve) => {
+    let settled = false
+    let safety = 0
+    let grace = 0
+    const finish = (state) => {
+      if (settled) return
+      settled = true
+      reg.removeEventListener('updatefound', onFound)
+      clearTimeout(safety)
+      clearTimeout(grace)
+      resolve(state)
+    }
+    const onFound = () => {
+      const worker = reg.installing || reg.waiting
+      if (!worker) { finish('ready'); return }
+      if (worker.state === 'installed' || worker.state === 'activated') { finish('ready'); return }
+      if (worker.state === 'redundant') { finish('failed'); return }
+      whenWorkerInstalled(worker, () => finish('ready'), () => finish('failed'))
+    }
+    // A worker left waiting by an earlier visit needs no further check.
+    if (reg.waiting) { finish('ready'); return }
+    reg.addEventListener('updatefound', onFound)
+    safety = setTimeout(() => finish(reg.waiting ? 'ready' : 'uptodate'), 8000)
+    Promise.resolve()
+      .then(() => reg.update())
+      .then(() => {
+        if (reg.installing || reg.waiting) { onFound(); return }
+        // Give the browser a beat to populate `installing` after update().
+        grace = setTimeout(() => {
+          if (!settled && !reg.installing && !reg.waiting) finish('uptodate')
+        }, 800)
+      })
+      .catch(() => finish('failed'))
+  })
+}
+
+// Last resort: the update path is stuck, so drop the registration and every
+// cache we own, then reload onto whatever the server serves.
+async function forceRefresh() {
+  try { if (swReg) await swReg.unregister() } catch {}
   try {
-    return fetch('./sw.js', { cache: 'reload' }).then(() => undefined, () => undefined)
-  } catch {
-    return Promise.resolve()
-  }
+    const keys = await caches.keys()
+    await Promise.all(keys.filter((k) => k.startsWith('pcf-')).map((k) => caches.delete(k)))
+  } catch {}
+  window.location.reload()
 }
 
 // Resolve once a worker finishes installing (or fails). The update check can

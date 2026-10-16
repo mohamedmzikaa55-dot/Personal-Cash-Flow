@@ -3,7 +3,7 @@
 // when this file's bytes change, and the shell files below are served
 // cache-first from VERSION — so without a bump, "Check for update" compares
 // identical bytes, finds nothing, and keeps serving the cached old files.
-const VERSION = 'pcf-v17'
+const VERSION = 'pcf-v18'
 const CORE = [
   './',
   './index.html',
@@ -22,9 +22,15 @@ self.addEventListener('install', (event) => {
   )
 })
 
-// The app asks us to activate after it has exported the auto-backup.
+// The app asks us to activate after it has exported the auto-backup, and asks
+// which release is running so it can catch a stuck update check.
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
+  const data = event.data || {}
+  if (data.type === 'SKIP_WAITING') { self.skipWaiting(); return }
+  if (data.type === 'GET_VERSION') {
+    const reply = event.ports && event.ports[0]
+    if (reply) reply.postMessage({ type: 'VERSION', version: VERSION })
+  }
 })
 
 self.addEventListener('activate', (event) => {
