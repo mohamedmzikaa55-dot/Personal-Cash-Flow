@@ -8,6 +8,13 @@ export const WALLET_STATUS = ['Available', 'Freezed']
 export const WALLET_CURRENCY = ['', '$', 'E£', 'EGP', '€', 'SAR', 'AED']
 // Glyphs a wallet's tile can show. The names map to SVGs in app.js.
 export const WALLET_ICONS = ['wallet', 'cash', 'card', 'bank', 'safe', 'phone', 'piggy', 'gem']
+// Glyphs a category's tile can show. The names map to SVGs in app.js. A
+// category with no icon falls back to the first letter of its name.
+export const CATEGORY_ICONS = [
+  'tag', 'cart', 'food', 'coffee', 'car', 'bus', 'home', 'bolt', 'tv',
+  'music', 'dumbbell', 'health', 'pill', 'book', 'shirt', 'gift', 'plane',
+  'piggy', 'coins', 'pet', 'baby', 'wifi', 'phone', 'game'
+]
 // Colours offered when picking a wallet's tile colour.
 export const WALLET_COLORS = [
   '#35d997', '#6ea8ff', '#a78bfa', '#ff8a5c', '#f2b73d', '#f472b6',
@@ -51,19 +58,19 @@ const DEFAULT_WALLETS = [
 ]
 
 const DEFAULT_CATEGORIES = [
-  { name: 'Other', budget: 1000 },
-  { name: 'Debt', budget: 500 },
-  { name: 'Entertainment', budget: 4000 },
-  { name: 'Transportation', budget: 600 },
-  { name: 'Bills', budget: 3000 },
-  { name: 'Subscription', budget: 1000 },
-  { name: 'Rent', budget: 1000 },
-  { name: 'Work Transportation', budget: 800 },
-  { name: 'Sport', budget: 1000 },
-  { name: 'Health Care', budget: 500 },
-  { name: 'Food & Drink', budget: 3000 },
-  { name: 'Gym', budget: 200 },
-  { name: 'Investment', budget: 5000 }
+  { name: 'Other', budget: 1000, icon: 'tag' },
+  { name: 'Debt', budget: 500, icon: 'coins' },
+  { name: 'Entertainment', budget: 4000, icon: 'game' },
+  { name: 'Transportation', budget: 600, icon: 'bus' },
+  { name: 'Bills', budget: 3000, icon: 'bolt' },
+  { name: 'Subscription', budget: 1000, icon: 'tv' },
+  { name: 'Rent', budget: 1000, icon: 'home' },
+  { name: 'Work Transportation', budget: 800, icon: 'car' },
+  { name: 'Sport', budget: 1000, icon: 'dumbbell' },
+  { name: 'Health Care', budget: 500, icon: 'health' },
+  { name: 'Food & Drink', budget: 3000, icon: 'food' },
+  { name: 'Gym', budget: 200, icon: 'dumbbell' },
+  { name: 'Investment', budget: 5000, icon: 'piggy' }
 ]
 
 const DEFAULT_SOURCES = [
@@ -271,7 +278,8 @@ function normalizeCategory(category, index) {
     id: category.id || uid('c'),
     name: str(category.name, 40) || 'Category',
     budget: Math.max(0, parseMoney(category.budget)),
-    color: clampColor(category.color, index || 0)
+    color: clampColor(category.color, index || 0),
+    icon: CATEGORY_ICONS.includes(str(category.icon, 20)) ? str(category.icon, 20) : ''
   }
 }
 

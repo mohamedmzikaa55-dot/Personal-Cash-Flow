@@ -1,4 +1,4 @@
-import { store, WALLET_TYPES, WALLET_STATUS, WALLET_CURRENCY, WALLET_ICONS, WALLET_COLORS } from './store.js'
+import { store, WALLET_TYPES, WALLET_STATUS, WALLET_CURRENCY, WALLET_ICONS, WALLET_COLORS, CATEGORY_ICONS } from './store.js'
 
 const app = document.getElementById('app')
 
@@ -233,6 +233,28 @@ function icon(name) {
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>',
     piggy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13a6 6 0 0 1 6-6h4.5a5.5 5.5 0 0 1 5.5 5.5V15a2 2 0 0 1-2 2h-1v1.5a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1V18H9v1.5a1 1 0 0 1-1 1H6.8a1 1 0 0 1-1-1V17.6A5.4 5.4 0 0 1 4 14.6V13Z"/><path d="M8.5 8 7 4.5M15.5 12h.01"/></svg>',
     gem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l3 5-9 13L3 8l3-5Z"/><path d="M3 8h18M9.5 8 12 21 14.5 8M6 3l3.5 5M18 3l-3.5 5"/></svg>',
+    // Category glyphs, offered by the category editor's icon picker.
+    tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6.6l9.4 9.4-6.6 6.6L4 10.6z"/><circle cx="8.4" cy="8.4" r="1.2"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.2 11.4h11.4L21 7.6H6.4"/><circle cx="9.2" cy="19.2" r="1.4"/><circle cx="17.6" cy="19.2" r="1.4"/></svg>',
+    food: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v5.5a2 2 0 0 0 4 0V3"/><path d="M9 11v10"/><path d="M17 3c-1.7 0-3 1.8-3 4s1.3 4 3 4v10"/></svg>',
+    coffee: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h13V13a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 9.5h1.8a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3.2v2.4M12 3.2v2.4"/></svg>',
+    car: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 14.5 5 9.6A2 2 0 0 1 6.9 8.2h10.2a2 2 0 0 1 1.9 1.4L20.5 14.5v4.3h-2.6v-1.7H6.1v1.7H3.5z"/><circle cx="7.2" cy="14.6" r="1.2"/><circle cx="16.8" cy="14.6" r="1.2"/></svg>',
+    bus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4.5" width="16" height="12.5" rx="2.5"/><path d="M4 10.5h16M8.5 4.5v6M15.5 4.5v6"/><circle cx="8" cy="19" r="1.2"/><circle cx="16" cy="19" r="1.2"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></svg>',
+    tv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8.5 21h7M12 17v4"/></svg>',
+    music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V6l10-2.2v11.7"/><circle cx="6.5" cy="17.8" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/></svg>',
+    dumbbell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M6.5 8.5v7M17.5 8.5v7M20 10v4M6.5 12h11"/></svg>',
+    health: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.6-7-9.5A3.9 3.9 0 0 1 12 6.9a3.9 3.9 0 0 1 7 3.6c0 4.9-7 9.5-7 9.5z"/></svg>',
+    pill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="8" rx="4"/><path d="M12 8v8"/></svg>',
+    book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h11a2 2 0 0 1 2 2V20H8a2 2 0 0 1-2-2z"/><path d="M9.5 3.5V20"/></svg>',
+    shirt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3 4 5.8l1.8 3 1.7-.9V20h9V7.9l1.7.9 1.8-3L15.5 3a3.5 3.5 0 0 1-7 0z"/></svg>',
+    gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="9" width="16" height="11" rx="1.5"/><path d="M4 13.2h16M12 9v11"/><path d="M12 9C10.3 9 8 8.2 8 6.3A2.3 2.3 0 0 1 12 5a2.3 2.3 0 0 1 4 1.3C16 8.2 13.7 9 12 9z"/></svg>',
+    plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 3.8 11l6 2.2 2.2 6z"/><path d="m9.8 13.2 10.7-9.7"/></svg>',
+    coins: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="7" rx="6.5" ry="3.2"/><path d="M5.5 7v4.5c0 1.8 2.9 3.2 6.5 3.2s6.5-1.4 6.5-3.2V7"/><path d="M5.5 11.5V16c0 1.8 2.9 3.2 6.5 3.2s6.5-1.4 6.5-3.2v-4.5"/></svg>',
+    pet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="9.5" r="1.7"/><circle cx="12" cy="7.6" r="1.7"/><circle cx="17" cy="9.5" r="1.7"/><path d="M12 20c-2.9 0-5-1.7-5-3.9 0-1.6 1.3-2.9 3-2.9h4c1.7 0 3 1.3 3 2.9 0 2.2-2.1 3.9-5 3.9z"/></svg>',
+    baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10.3h.01M15 10.3h.01"/><path d="M9 15c.8.9 1.9 1.4 3 1.4s2.2-.5 3-1.4"/></svg>',
+    wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a8 8 0 0 1 10 0"/><path d="M10 16.4a4 4 0 0 1 4 0"/><circle cx="12" cy="19.4" r="1"/></svg>',
+    game: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8" width="19" height="9.5" rx="4.5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="11.6" r="1"/><circle cx="18.2" cy="13.8" r="1"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
   }
   return icons[name] || ''
@@ -344,10 +366,10 @@ function renderDashboard() {
           <span class="tile-label">${icon('down')} Expense</span>
           <span class="tile-figure mono">${money(summary.expense)}</span>
         </div>
-        <div class="tile rate">
+        <div class="tile rate ${summary.net < 0 ? 'neg' : ''}">
           <span class="tile-label">Save rate</span>
-          <span class="ring" style="--p:${Math.max(0, Math.min(100, summary.rate))}%"><span>${summary.rate}%</span></span>
-          <span class="tile-figure">${money(summary.net)} kept</span>
+          <span class="ring" role="img" aria-label="Save rate ${summary.rate}%" style="--p:${Math.max(0, Math.min(100, summary.rate))}%"><span>${summary.rate}%</span></span>
+          <span class="tile-figure">${summary.net < 0 ? `${money(Math.abs(summary.net))} over` : `${money(summary.net)} kept`}</span>
         </div>
       </div>
       <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}</p>
@@ -558,10 +580,14 @@ function budgetBar(category) {
   const pct = category.budget > 0 ? Math.round((category.spent / category.budget) * 100) : 0
   const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
   const pctCls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
+  // The chosen icon, or the category's initial when none is set.
+  const glyph = category.icon
+    ? icon(category.icon)
+    : escapeHtml((category.name || '?').trim().charAt(0).toUpperCase())
   return `
     <div class="budget-row">
       <div class="top">
-        <span><span class="cat-tile" style="background:${softColor(category.color)};color:${escapeHtml(category.color)}">${escapeHtml((category.name || '?').trim().charAt(0).toUpperCase())}</span>${escapeHtml(category.name)}</span>
+        <span><span class="cat-tile" style="background:${softColor(category.color)};color:${escapeHtml(category.color)}">${glyph}</span>${escapeHtml(category.name)}</span>
         <span class="mono"><b>${money(category.spent)}</b> <span class="muted">/ ${money(category.budget)}</span></span>
         <span class="pct ${pctCls}">${pct}%</span>
       </div>
@@ -1601,6 +1627,14 @@ function renderModal() {
         <label>Monthly budget<input name="budget" type="number" step="0.01" value="${Number(c.budget) || 0}" /></label>
         <label>Colour<input name="color" type="color" value="${escapeHtml(c.color || '#5b8cff')}" style="padding:4px;height:46px" /></label>
       </div>
+      <div class="seg-field">
+        <span class="seg-label">Tile icon</span>
+        <div class="icon-row" id="category-icon-row">
+          ${CATEGORY_ICONS.map((name) => `<button type="button" class="icon-pick ${c.icon === name ? 'on' : ''}" data-action="category-icon" data-value="${name}" aria-label="${name}">${icon(name)}</button>`).join('')}
+          <input type="hidden" name="icon" value="${escapeHtml(c.icon || '')}" />
+        </div>
+        <p class="muted tight" id="category-icon-hint">${c.icon ? `Showing the “${escapeHtml(c.icon)}” icon on this category's tile.` : "Pick an icon for this category, or leave it blank to show the first letter of its name."}</p>
+      </div>
     `
   } else if (modal === 'source') {
     const s = modalPayload || {}
@@ -1944,6 +1978,20 @@ document.addEventListener('click', (event) => {
       : "Pick a colour and an icon. Tap “A” or the chosen icon again to let the app decide from the wallet's name and type."
     return
   }
+  if (action === 'category-icon') {
+    const row = actionEl.closest('.icon-row')
+    if (!row) return
+    const hidden = row.querySelector('input[name="icon"]')
+    // Tapping the active icon clears it, back to the name's first letter.
+    const next = hidden && hidden.value === actionEl.dataset.value ? '' : actionEl.dataset.value
+    if (hidden) hidden.value = next
+    row.querySelectorAll('.icon-pick').forEach((b) => b.classList.toggle('on', b.dataset.value === next))
+    const hint = document.getElementById('category-icon-hint')
+    if (hint) hint.textContent = next
+      ? `Showing the “${next}” icon on this category's tile.`
+      : "Pick an icon for this category, or leave it blank to show the first letter of its name."
+    return
+  }
   if (action === 'goal-mode') {
     const wrap = actionEl.closest('.seg-field')
     if (!wrap) return
@@ -2221,7 +2269,7 @@ document.addEventListener('submit', (event) => {
     else store.addWallet(fields)
     toast(id ? 'Wallet updated' : 'Wallet added')
   } else if (type === 'category') {
-    const fields = { name: get('name'), budget: num('budget'), color: get('color') }
+    const fields = { name: get('name'), budget: num('budget'), color: get('color'), icon: get('icon') }
     if (!fields.name) return
     if (id) store.updateCategory(id, fields)
     else store.addCategory(fields)

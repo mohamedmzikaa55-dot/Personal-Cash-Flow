@@ -679,7 +679,7 @@ h2 svg {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: conic-gradient(var(--green) 0 var(--p), var(--card-2) var(--p) 100%);
+  background: conic-gradient(var(--rate-color, var(--green)) 0 var(--p), var(--card-2) var(--p) 100%);
   display: grid;
   place-items: center;
   flex: none;
@@ -702,6 +702,17 @@ h2 svg {
 .tile.rate .tile-figure {
   font-size: 13px;
   color: var(--muted);
+}
+
+/* A month that spends more than it earns turns the ring and its caption red,
+   so the tile never reads as a healthy green at a glance. */
+.tile.rate.neg .ring {
+  --rate-color: var(--red);
+}
+
+.tile.rate.neg .ring span,
+.tile.rate.neg .tile-figure {
+  color: var(--red);
 }
 
 .pill {
