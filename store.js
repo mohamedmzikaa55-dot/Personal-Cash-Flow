@@ -417,6 +417,7 @@ function debtDirectionFrom(value) {
 
 function normalizeDebt(debt) {
   const direction = DEBT_DIRECTIONS.includes(debt.direction) ? debt.direction : 'Lent'
+  const linked = direction === 'Collect' || direction === 'Return'
   return {
     id: debt.id || uid('d'),
     // A short description of what the debt was for, plus a phone / reference
@@ -426,6 +427,12 @@ function normalizeDebt(debt) {
     number: str(debt.number, 40),
     amount: Math.abs(parseMoney(debt.amount)),
     direction,
+    // A Collect points at the Lent it settles; a Return at the Borrow. The
+    // Lent / Borrow itself carries no parent.
+    parentId: linked ? str(debt.parentId, 60) : '',
+    // Lent / Borrow only: leave the chosen wallet's balance alone. A linked
+    // Collect / Return follows its parent's choice (see debtAffectsWallet).
+    excludeFromWallet: !linked && debt.excludeFromWallet === true,
     walletId: str(debt.walletId, 60),
     date: isValidISO(debt.date) ? debt.date : '',
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(debt.time || '')) ? debt.time : '',
@@ -723,6 +730,62 @@ function toMainCurrency(amount, currency) {
   return round2(value * rate)
 }
 
+// ---------- debt linking ----------
+
+// A Collect / Return may be linked to the Lent / Borrow it settles.
+function debtParent(debt) {
+  if (!debt || !debt.parentId) return null
+  return state.debts.find((d) => d.id === debt.parentId) || null
+}
+
+// Whether a debt record moves the wallet it points at. A linked Collect /
+// Return follows its parent's "exclude from wallet" choice, so money that never
+// left the wallet is never added back into it either.
+function debtAffectsWallet(debt) {
+  if (!debt) return false
+  if (debt.direction === 'Collect' || debt.direction === 'Return') {
+    const parent = debtParent(debt)
+    return parent ? parent.excludeFromWallet !== true : true
+  }
+  return debt.excludeFromWallet !== true
+}
+
+// How much of a Lent / Borrow has been collected / returned so far. `excludeId`
+// leaves one record out, so an edited Collect sees the room it itself occupies.
+function debtSettledAmount(id, excludeId) {
+  return round2(state.debts
+    .filter((d) => d.parentId === id && d.id !== excludeId && (d.direction === 'Collect' || d.direction === 'Return'))
+    .reduce((sum, d) => sum + d.amount, 0))
+}
+
+function debtRemaining(debtOrId, excludeId) {
+  const debt = typeof debtOrId === 'string'
+    ? state.debts.find((d) => d.id === debtOrId)
+    : debtOrId
+  if (!debt) return 0
+  if (debt.direction !== 'Lent' && debt.direction !== 'Borrow') return debt.amount
+  return round2(Math.max(0, debt.amount - debtSettledAmount(debt.id, excludeId)))
+}
+
+// A Lent / Borrow is Done once nothing is left to collect / return.
+function debtStatus(debt) {
+  if (!debt || (debt.direction !== 'Lent' && debt.direction !== 'Borrow')) return 'Done'
+  return debtRemaining(debt) <= 0.005 ? 'Done' : 'Open'
+}
+
+// A debt record with the running figures the screens show.
+function debtWithProgress(debt) {
+  const parent = debtParent(debt)
+  return {
+    ...debt,
+    settled: debtSettledAmount(debt.id),
+    remaining: debtRemaining(debt),
+    status: debtStatus(debt),
+    parentPerson: parent ? parent.person : '',
+    parentName: parent ? parent.name : ''
+  }
+}
+
 function walletBalance(id) {
   const wallet = state.wallets.find((w) => w.id === id)
   if (!wallet) return 0
@@ -745,6 +808,7 @@ function walletBalance(id) {
   })
   state.debts.forEach((d) => {
     if (d.walletId !== id) return
+    if (!debtAffectsWallet(d)) return
     total += (DEBT_WALLET_SIGN[d.direction] || -1) * d.amount
   })
   return round2(total)
@@ -916,8 +980,9 @@ function allTransactions() {
   const list = [
     ...state.incomes.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'income' })),
     ...state.expenses.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'expense' })),
-    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) })),
-    ...state.debts.filter(isActive).map((d) => ({ ...d, kind: 'debt' }))
+    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) }))
+    // Debts live in their own section on the Activity tab, so they are kept out
+    // of the income / expense / transfer feed.
   ]
   return list.sort((a, b) => {
     const da = a.effDate || a.date
@@ -1037,14 +1102,22 @@ function netWorth() {
   const totals = walletTotals()
   const cash = round2(totals.main + totals.allowable + totals.foreign)
   const assets = state.assets.filter((a) => !a.sold).reduce((sum, a) => sum + a.buyingPrice, 0)
-  const debt = debtSummary()
+  // Only debts that moved a wallet are counted, so an "exclude from wallet"
+  // Lent / Borrow never inflates or deflates the net worth.
+  const counted = state.debts.filter(debtAffectsWallet)
+  const lent = counted.filter((d) => d.direction === 'Lent').reduce((sum, d) => sum + d.amount, 0)
+  const collected = counted.filter((d) => d.direction === 'Collect').reduce((sum, d) => sum + d.amount, 0)
+  const borrowed = counted.filter((d) => d.direction === 'Borrow').reduce((sum, d) => sum + d.amount, 0)
+  const returned = counted.filter((d) => d.direction === 'Return').reduce((sum, d) => sum + d.amount, 0)
+  const receivable = round2(Math.max(0, lent - collected))
+  const payable = round2(Math.max(0, borrowed - returned))
   return {
     cash,
     ...totals,
     assets,
-    receivable: debt.outstanding,
-    payable: debt.payable,
-    total: round2(cash + assets + debt.outstanding - debt.payable)
+    receivable,
+    payable,
+    total: round2(cash + assets + receivable - payable)
   }
 }
 
@@ -1685,11 +1758,23 @@ export const store = {
       return da === db
         ? String(b.time || '').localeCompare(String(a.time || ''))
         : (da < db ? 1 : -1)
-    }).map((d) => ({ ...d }))
+    }).map(debtWithProgress)
   },
   findDebt(id) {
     return state.debts.find((d) => d.id === id) || null
   },
+  // The Lent / Borrow a new Collect / Return can be pointed at. Only the ones
+  // with something left are offered, so a fully settled record disappears.
+  openDebtParents(direction) {
+    const want = direction === 'Collect' ? 'Lent' : 'Borrow'
+    return state.debts
+      .filter((d) => d.direction === want)
+      .map(debtWithProgress)
+      .filter((d) => d.status === 'Open' && d.remaining > 0.005)
+  },
+  debtRemaining,
+  debtStatus,
+  debtSettledAmount,
   addDebt(fields) {
     const debt = normalizeDebt(fields)
     state.debts.push(debt)
@@ -1703,7 +1788,9 @@ export const store = {
     save()
   },
   removeDebt(id) {
-    state.debts = state.debts.filter((d) => d.id !== id)
+    // A Lent / Borrow takes its Collect / Return records with it, otherwise they
+    // would be left pointing at nothing.
+    state.debts = state.debts.filter((d) => d.id !== id && d.parentId !== id)
     save()
   },
   debtSummary,
@@ -1776,7 +1863,8 @@ export const store = {
       if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out', effDate: effectiveDate(t) })
     })
     state.debts.forEach((d) => {
-      if (d.walletId === id && isActive(d)) rows.push({ ...d, kind: 'debt' })
+      // Debts that were kept out of the wallet are not part of its history.
+      if (d.walletId === id && isActive(d) && debtAffectsWallet(d)) rows.push({ ...debtWithProgress(d), kind: 'debt' })
     })
     return rows.sort((a, b) => {
       const da = a.effDate || a.date

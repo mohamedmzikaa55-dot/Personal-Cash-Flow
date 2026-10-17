@@ -617,26 +617,133 @@ function debtTypeInfo(direction) {
   return DEBT_TYPES[direction] || DEBT_TYPES.Lent
 }
 
-// One debt row, used by the Debts section and the activity list.
-function debtRow(d) {
+// ---------- debt linking helpers ----------
+
+// The record currently open in the debt form, so a linked Collect / Return does
+// not count its own amount against the room it is allowed to use.
+function currentDebtFormId() {
+  const form = document.querySelector('form[data-form="debt"]')
+  return form ? (form.dataset.id || '') : ''
+}
+
+// Options for the "Collect from" / "Return against" picker. Open Lent / Borrow
+// records come first; an already-linked parent is kept even once it is settled,
+// so editing an old Collect doesn't lose its target.
+function debtParentOptionsHtml(direction, selected, excludeId) {
+  const want = direction === 'Collect' ? 'Lent' : 'Borrow'
+  const skip = excludeId || ''
+  const list = store.openDebtParents(direction).map((p) => ({ id: p.id, person: p.person, name: p.name }))
+  if (selected && !list.some((p) => p.id === selected)) {
+    const current = store.findDebt(selected)
+    if (current && current.direction === want) {
+      list.unshift({ id: current.id, person: current.person, name: current.name })
+    }
+  }
+  const options = list.map((p) => {
+    const left = store.debtRemaining(p.id, skip)
+    return `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${escapeHtml(p.person)}${p.name ? ` — ${escapeHtml(p.name)}` : ''} · ${money(left)} left</option>`
+  }).join('')
+  const placeholder = list.length
+    ? 'Choose…'
+    : `No open ${want === 'Lent' ? 'Lent' : 'Borrow'} transactions`
+  return `<option value="">${placeholder}</option>${options}`
+}
+
+// Keep the amount box in step with the picked Lent / Borrow: it can never be
+// more than what is left to collect / return.
+function updateDebtAmountLimit() {
+  const form = document.querySelector('form[data-form="debt"]')
+  if (!form) return
+  const hint = document.getElementById('debt-amount-limit')
+  const dirField = form.querySelector('select[name="direction"]')
+  const direction = dirField ? dirField.value : 'Lent'
+  const amount = form.querySelector('input[name="amount"]')
+  const select = form.querySelector('select[data-debt-parent]')
+  if (!amount || !select) return
+  if (direction !== 'Collect' && direction !== 'Return') {
+    if (hint) hint.textContent = ''
+    return
+  }
+  const parent = select.value ? store.findDebt(select.value) : null
+  if (!parent) {
+    amount.removeAttribute('max')
+    if (hint) hint.textContent = 'Choose which transaction this settles.'
+    return
+  }
+  const remaining = store.debtRemaining(parent.id, currentDebtFormId())
+  amount.max = remaining
+  if (hint) {
+    const word = direction === 'Collect' ? 'to collect' : 'to return'
+    hint.textContent = `${money(remaining)} still ${word} on this record — you can ${direction === 'Collect' ? 'collect' : 'return'} up to that.`
+  }
+}
+
+// Show / hide the parent picker and the wallet-exclusion box as the type changes.
+function syncDebtTypeFields(direction) {
+  const hint = document.getElementById('debt-type-hint')
+  if (hint) hint.textContent = debtTypeInfo(direction).hint
+  const linked = direction === 'Collect' || direction === 'Return'
+  const wrap = document.getElementById('debt-parent-wrap')
+  if (wrap) wrap.style.display = linked ? '' : 'none'
+  const excludeWrap = document.getElementById('debt-exclude-wrap')
+  if (excludeWrap) excludeWrap.style.display = linked ? 'none' : ''
+  const label = document.getElementById('debt-parent-label')
+  if (label && label.firstChild) {
+    label.firstChild.textContent = direction === 'Return' ? 'Return against (Borrow)' : 'Collect from (Lent)'
+  }
+  const select = document.getElementById('debt-parent-select')
+  if (select) {
+    select.required = linked
+    if (linked) select.innerHTML = debtParentOptionsHtml(direction, '', currentDebtFormId())
+    else select.value = ''
+  }
+  updateDebtAmountLimit()
+}
+
+// One debt row with its Collect / Return action, shared by the Debts section on
+// the More screen and the Debt transactions section on the Activity tab. The row
+// itself opens the editor when tapped.
+function debtTxRow(d) {
   const info = debtTypeInfo(d.direction)
   const title = escapeHtml(d.name || d.person)
   const personBit = d.name ? ` <span class="muted">· ${escapeHtml(d.person)}</span>` : ''
+  const linked = d.direction === 'Collect' || d.direction === 'Return'
+  const parent = linked && d.parentId ? store.findDebt(d.parentId) : null
+  let stateBit = ''
+  if (d.direction === 'Lent' || d.direction === 'Borrow') {
+    const word = d.direction === 'Lent' ? 'to collect' : 'to return'
+    stateBit = d.status === 'Done'
+      ? '<span class="badge green">Done</span>'
+      : `<span class="badge gold">${money(d.remaining)} ${word}</span>`
+  } else if (parent) {
+    stateBit = `<span class="muted">against ${escapeHtml(parent.person)}${parent.name ? ` · ${escapeHtml(parent.name)}` : ''}</span>`
+  }
+  const walletBit = d.walletId
+    ? `${escapeHtml(store.walletName(d.walletId))}${d.excludeFromWallet ? ' (excluded)' : ''}`
+    : ''
   const bits = [
     `<span class="badge ${info.badge}">${info.label}</span>`,
+    `${info.sign === 'pos' ? '+' : '−'}${money(d.amount)}`,
     d.date ? `${store.formatDate(d.date)}${d.time ? ` · ${d.time}` : ''}` : '',
     d.expectedDate ? `due ${store.formatDate(d.expectedDate)}` : '',
-    d.walletId ? escapeHtml(store.walletName(d.walletId)) : '',
+    walletBit,
     d.number ? `☎ ${escapeHtml(d.number)}` : ''
   ].filter(Boolean)
+  const canCollect = d.direction === 'Lent' && d.status !== 'Done'
+  const canReturn = d.direction === 'Borrow' && d.status !== 'Done'
+  const actions = [canCollect || canReturn ? `
+      <div class="row-actions debt-actions">
+        ${canCollect ? `<button class="ghost-btn compact" data-action="debt-collect" data-id="${d.id}">Collect</button>` : ''}
+        ${canReturn ? `<button class="ghost-btn compact" data-action="debt-return" data-id="${d.id}">Return</button>` : ''}
+      </div>` : ''].join('')
   return `
     <article class="item" data-action="edit-debt" data-id="${d.id}">
       <span class="avatar ${info.avatar}">${icon(info.glyph)}</span>
       <div class="body">
         <div class="title">${title}${personBit}</div>
-        <div class="meta">${bits.join(' · ')}</div>
+        <div class="meta">${bits.join(' · ')}${stateBit ? ' · ' + stateBit : ''}</div>
       </div>
-      <div class="amount ${info.sign} mono">${info.sign === 'pos' ? '+' : '−'}${money(d.amount)}</div>
+      ${actions}
     </article>
   `
 }
@@ -855,7 +962,7 @@ function renderTransactions() {
   const pendingTransfers = store.getTransfers().filter((t) => t.pending)
   const showsMonthNav = txPeriod === 'month' || txPeriod === 'year'
   const periodChips = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']]
-  const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers'], ['debt', 'Debts']]
+  const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']]
   return `
     <div class="topbar topbar-inline">
       <div>
@@ -908,6 +1015,35 @@ function renderTransactions() {
         ${pendingTransfers.map(pendingTransferRow).join('')}
       </div>
     </section>` : ''}
+
+    ${debtSectionHtml()}
+  `
+}
+
+// Debt transactions get their own section on the Activity tab: a Lent can be
+// collected, a Borrow returned, and a fully settled record is marked Done so it
+// no longer offers an action.
+function debtSectionHtml() {
+  const debts = store.getDebts()
+  const summary = store.debtSummary()
+  const open = debts.filter((d) => d.status === 'Open' && (d.direction === 'Lent' || d.direction === 'Borrow')).length
+  const parts = [
+    `Lent ${money(summary.lent)} · collected ${money(summary.collected)} · to collect ${money(summary.outstanding)}`,
+    (summary.borrowed || summary.returned)
+      ? `Borrowed ${money(summary.borrowed)} · returned ${money(summary.returned)} · to return ${money(summary.payable)}`
+      : ''
+  ].filter(Boolean)
+  return `
+    <section class="section" style="margin-top:18px">
+      <div class="section-head">
+        <h2>Debt transactions</h2>
+        <button class="ghost-btn compact" data-action="new-debt">+ Add</button>
+      </div>
+      <p class="muted tight" style="margin-bottom:10px">${open} still open · ${parts.join(' · ')}</p>
+      <div class="list">
+        ${debts.length ? debts.map(debtTxRow).join('') : emptyState('No debt transactions yet.', 'inbox')}
+      </div>
+    </section>
   `
 }
 
@@ -1633,7 +1769,7 @@ function renderMore() {
         `).join('')}
       </div>` : ''}
       <div class="list">
-        ${debtList.length ? debtList.map(debtRow).join('') : emptyState('No debts tracked.', 'inbox')}
+        ${debtList.length ? debtList.map(debtTxRow).join('') : emptyState('No debts tracked.', 'inbox')}
       </div>
     </section>
 
@@ -2020,6 +2156,7 @@ function renderModal() {
   } else if (modal === 'debt') {
     const d = modalPayload || {}
     const direction = DEBT_TYPES[d.direction] ? d.direction : 'Lent'
+    const linked = direction === 'Collect' || direction === 'Return'
     title = `${isEdit ? 'Edit' : 'New'} debt transaction`
     body = `
       <label>Description<input name="name" maxlength="120" value="${escapeHtml(d.name || '')}" placeholder="What is this debt for?" /></label>
@@ -2034,6 +2171,12 @@ function renderModal() {
         </select></label>
       </div>
       <p class="muted tight" id="debt-type-hint" style="margin-top:-4px">${escapeHtml(debtTypeInfo(direction).hint)}</p>
+      <div id="debt-parent-wrap" style="display:${linked ? '' : 'none'}">
+        <label id="debt-parent-label">${direction === 'Return' ? 'Return against (Borrow)' : 'Collect from (Lent)'}<select name="parentId" id="debt-parent-select" data-debt-parent ${linked ? 'required' : ''}>
+          ${debtParentOptionsHtml(direction, d.parentId || '', d.id || '')}
+        </select></label>
+        <p class="muted tight" id="debt-amount-limit" style="margin-top:-4px"></p>
+      </div>
       <div class="row2">
         <label>Date<input name="date" type="date" value="${d.date || store.todayISO()}" /></label>
         <label>Time<input name="time" type="time" value="${escapeHtml(d.time || store.nowTime())}" /></label>
@@ -2042,7 +2185,10 @@ function renderModal() {
         <label>Wallet${walletSelect(d.walletId, 'walletId', false)}</label>
         <label>Expected date<input name="expectedDate" type="date" value="${d.expectedDate || ''}" /></label>
       </div>
-      <p class="muted tight" style="margin-top:-4px">Lent and Return take money out of the chosen wallet; Collect and Borrow put it in. A Lent can be collected back — and a Borrow returned — in one go or in several records.</p>
+      <label id="debt-exclude-wrap" class="row2" style="display:${linked ? 'none' : ''};grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="excludeFromWallet" ${d.excludeFromWallet ? 'checked' : ''} style="width:auto" /> Exclude from the selected wallet
+      </label>
+      <p class="muted tight" style="margin-top:-4px">Lent and Return take money out of the wallet; Collect and Borrow put it in. Collect a Lent back — or return a Borrow — in one go or in several records; the record is marked Done once nothing is left.</p>
     `
   }
 
@@ -2131,6 +2277,14 @@ function render() {
       if (label) label.style.setProperty('--sw', colorField.value)
       row.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('on', s === label))
     })
+  }
+  // The debt form swaps between a wallet-exclusion box and a Lent / Borrow
+  // picker as its type changes, and keeps the amount box within the open balance.
+  const debtForm = document.querySelector('form[data-form="debt"]')
+  if (debtForm) {
+    const parentSel = debtForm.querySelector('select[data-debt-parent]')
+    if (parentSel) parentSel.addEventListener('change', updateDebtAmountLimit)
+    updateDebtAmountLimit()
   }
   scheduleDueRefresh()
 }
@@ -2320,6 +2474,29 @@ document.addEventListener('click', (event) => {
   if (action === 'open-expense') { openModal('expense', {}, fromChoose); return }
   if (action === 'open-transfer') { openModal('transfer', {}, fromChoose); return }
   if (action === 'open-debt') { openModal('debt', {}, fromChoose); return }
+  if (action === 'debt-collect' || action === 'debt-return') {
+    const src = store.findDebt(actionEl.dataset.id)
+    if (!src) return
+    const direction = action === 'debt-collect' ? 'Collect' : 'Return'
+    const remaining = store.debtRemaining(src.id)
+    if (remaining <= 0.005) {
+      toast(`Nothing left to ${direction === 'Collect' ? 'collect' : 'return'}`)
+      render()
+      return
+    }
+    // Pre-fill a fresh Collect / Return for this Lent / Borrow, capped at what
+    // is still outstanding.
+    openModal('debt', {
+      direction,
+      parentId: src.id,
+      person: src.person,
+      name: src.name,
+      number: src.number,
+      walletId: src.walletId,
+      amount: remaining
+    })
+    return
+  }
   if (action === 'open-choose') { openModal('choose', null); return }
   if (action === 'open-wallet-new') { openModal('wallet', {}, fromChoose); return }
 
@@ -2477,7 +2654,14 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'delete-debt') {
-    if (!window.confirm('Delete this debt record?')) return
+    const target = store.findDebt(actionEl.dataset.id)
+    const linkedCount = target && (target.direction === 'Lent' || target.direction === 'Borrow')
+      ? store.getDebts().filter((d) => d.parentId === target.id).length
+      : 0
+    const message = linkedCount
+      ? `Delete this debt and its ${linkedCount} linked ${target.direction === 'Lent' ? 'collect' : 'return'} record${linkedCount === 1 ? '' : 's'}?`
+      : 'Delete this debt record?'
+    if (!window.confirm(message)) return
     store.removeDebt(actionEl.dataset.id)
     toast('Debt deleted')
     goBack()
@@ -2623,12 +2807,39 @@ document.addEventListener('submit', (event) => {
     else store.addAsset(fields)
     toast(id ? 'Asset updated' : 'Asset added')
   } else if (type === 'debt') {
-    const fields = { name: get('name'), person: get('person'), number: get('number'), amount: num('amount'), direction: get('direction'), walletId: get('walletId'), date: get('date'), time: get('time'), expectedDate: get('expectedDate') }
+    const direction = get('direction')
+    const linked = direction === 'Collect' || direction === 'Return'
+    const fields = {
+      name: get('name'),
+      person: get('person'),
+      number: get('number'),
+      amount: num('amount'),
+      direction,
+      parentId: linked ? get('parentId') : '',
+      excludeFromWallet: !linked && data.get('excludeFromWallet') === 'on',
+      walletId: get('walletId'),
+      date: get('date'),
+      time: get('time'),
+      expectedDate: get('expectedDate')
+    }
+    if (linked) {
+      const parent = fields.parentId ? store.findDebt(fields.parentId) : null
+      if (!parent) { toast(`Choose the ${direction === 'Collect' ? 'Lent' : 'Borrow'} transaction to settle`); return }
+      // What is left to collect / return, leaving this record out when editing.
+      const remaining = store.debtRemaining(parent.id, id || '')
+      if (fields.amount > remaining + 0.005) {
+        toast(`You can ${direction === 'Collect' ? 'collect' : 'return'} at most ${money(remaining)}`)
+        return
+      }
+      // Follow the parent, so the record reads against the right person and wallet.
+      if (!fields.person) fields.person = parent.person
+      if (!fields.walletId) fields.walletId = parent.walletId
+    }
     if (!fields.person) { toast('Enter a person'); return }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateDebt(id, fields)
     else store.addDebt(fields)
-    toast(id ? 'Debt updated' : 'Debt added')
+    toast(id ? 'Debt updated' : (linked ? `${direction} recorded` : 'Debt added'))
   }
 
   // Save closes the sheet and pops the overlay history entry.
@@ -2666,8 +2877,11 @@ document.addEventListener('change', (event) => {
     return
   }
   if (el && el.matches && el.matches('select[data-debt-direction]')) {
-    const hint = document.getElementById('debt-type-hint')
-    if (hint) hint.textContent = debtTypeInfo(el.value).hint
+    syncDebtTypeFields(el.value)
+    return
+  }
+  if (el && el.matches && el.matches('select[data-debt-parent]')) {
+    updateDebtAmountLimit()
     return
   }
   if (el && el.matches && el.matches('select[data-repeat]')) {

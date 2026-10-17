@@ -551,6 +551,12 @@ h2 svg {
   gap: 6px;
 }
 
+/* Collect / Return buttons on a debt row can wrap on narrow screens. */
+.row-actions.debt-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .item-meta {
   font-size: 12px;
   color: var(--muted);
