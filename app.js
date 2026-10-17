@@ -24,6 +24,10 @@ let budgetEdit = false
 let dueRefreshTimer = null
 let calMonth = null
 let calSelected = null
+// Budgets tab: its own calendar month and selected day, kept apart from the
+// breakdown charts' period so browsing days never changes the donut.
+let budgetCal = null
+let budgetCalDay = null
 
 // ---------- overlay history ----------
 // Every modal / drill-down pushes a history entry so the Android back button,
@@ -255,6 +259,8 @@ function icon(name) {
     baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10.3h.01M15 10.3h.01"/><path d="M9 15c.8.9 1.9 1.4 3 1.4s2.2-.5 3-1.4"/></svg>',
     wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a8 8 0 0 1 10 0"/><path d="M10 16.4a4 4 0 0 1 4 0"/><circle cx="12" cy="19.4" r="1"/></svg>',
     game: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8" width="19" height="9.5" rx="4.5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="11.6" r="1"/><circle cx="18.2" cy="13.8" r="1"/></svg>',
+    repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"/></svg>',
+    handcoin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="6" r="3"/><path d="M16 4.5v3M17.2 5.4c0-.5-.5-.8-1.2-.8s-1.2.3-1.2.8.5.7 1.2.8 1.2.3 1.2.8-.5.8-1.2.8-1.2-.3-1.2-.8"/><path d="M3 13h5l3 3h4l5-5a1.5 1.5 0 0 0-2-2l-3 2h-2"/></svg>',
     person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.6 20a7.4 7.4 0 0 1 14.8 0"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
   }
@@ -1040,13 +1046,13 @@ function renderWallets() {
       ${walletsTotalsLine(totals)}
     </section>
     <div class="list">
-      ${wallets.length ? wallets.map((w) => walletDetailRow(w)).join('') : emptyState('No wallets yet. Tap + to add one.', 'wallet')}
+      ${wallets.length ? wallets.map((w, i) => walletDetailRow(w, i, wallets.length)).join('') : emptyState('No wallets yet. Tap + to add one.', 'wallet')}
     </div>
     ${renderGoalsSection()}
   `
 }
 
-function walletDetailRow(wallet) {
+function walletDetailRow(wallet, index, total) {
   const parts = walletBreakdown(wallet)
   const monthTx = store.walletTransactions(wallet.id).filter((r) => store.monthKey(r.date) === month)
   const income = monthTx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
@@ -1072,6 +1078,8 @@ function walletDetailRow(wallet) {
       <div class="wallet-figure">
         <b class="mono ${parts.total < 0 ? 'neg' : ''}">${money(parts.total)}</b>
         <div class="row-actions">
+          <button class="mini-btn" data-action="wallet-up" data-id="${wallet.id}" title="Move up" aria-label="Move ${escapeHtml(wallet.name)} up" ${index === 0 ? 'disabled' : ''}>${icon('up')}</button>
+          <button class="mini-btn" data-action="wallet-down" data-id="${wallet.id}" title="Move down" aria-label="Move ${escapeHtml(wallet.name)} down" ${index === total - 1 ? 'disabled' : ''}>${icon('down')}</button>
           <button class="mini-btn" data-action="edit-wallet" data-id="${wallet.id}" title="Edit" aria-label="Edit wallet">${icon('edit')}</button>
           <button class="mini-btn danger" data-action="delete-wallet" data-id="${wallet.id}" title="Delete" aria-label="Delete wallet">${icon('trash')}</button>
         </div>
@@ -1265,11 +1273,169 @@ function sourceUsage(id) {
   return store.getTransactions().filter((t) => t.kind === 'income' && t.sourceId === id).length
 }
 
+// The month the Budgets calendar is showing: its own choice, else the month the
+// rest of the Budgets tab is on.
+function budgetCalKey() {
+  return budgetCal || month || store.monthKey(store.todayISO())
+}
+
+function shiftBudgetCal(delta) {
+  const [y, m] = budgetCalKey().split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  budgetCal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  budgetCalDay = null
+}
+
+function budgetCalLabel(key) {
+  const d = new Date(`${key}-01T00:00:00`)
+  if (Number.isNaN(d.getTime())) return store.monthLabel(key)
+  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+}
+
+// Everything the calendar and the statistics cards need for one month: the
+// transactions, per-day totals, and the derived averages / extremes.
+function budgetMonthStats(key) {
+  const list = store.getTransactions().filter((t) => store.monthKey(t.effDate || t.date) === key)
+  const dayTotals = new Map()
+  const catTotals = new Map()
+  let income = 0
+  let expense = 0
+  list.forEach((t) => {
+    const d = t.effDate || t.date
+    const day = dayTotals.get(d) || { income: 0, expense: 0, count: 0 }
+    if (t.kind === 'income') {
+      income += t.amount
+      day.income += t.amount
+    } else if (t.kind === 'expense') {
+      expense += t.amount
+      day.expense += t.amount
+      const id = t.categoryId || ''
+      catTotals.set(id, (catTotals.get(id) || 0) + t.amount)
+    }
+    day.count += 1
+    dayTotals.set(d, day)
+  })
+  let topCategory = null
+  catTotals.forEach((value, id) => {
+    if (!topCategory || value > topCategory.value) topCategory = { id, value }
+  })
+  const [y, m] = key.split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const spentDays = [...dayTotals.values()].filter((d) => d.expense > 0).length
+  const busiest = [...dayTotals.entries()].filter(([, d]) => d.expense > 0).sort((a, b) => b[1].expense - a[1].expense)[0]
+  return {
+    key,
+    list,
+    income,
+    expense,
+    net: income - expense,
+    dayTotals,
+    topCategory,
+    daysInMonth,
+    spentDays,
+    avgPerDay: daysInMonth ? expense / daysInMonth : 0,
+    avgPerSpentDay: spentDays ? expense / spentDays : 0,
+    busiest: busiest ? { date: busiest[0], ...busiest[1] } : null
+  }
+}
+
+// A month grid of daily income-minus-spending, with the tapped day's
+// transactions below. Reuses the schedule calendar's styling.
+function renderBudgetCalendar() {
+  const key = budgetCalKey()
+  const stats = budgetMonthStats(key)
+  const [y, m] = key.split('-').map(Number)
+  const startDow = new Date(y, m - 1, 1).getDay()
+  const cells = []
+  for (let i = 0; i < startDow; i += 1) cells.push(null)
+  for (let d = 1; d <= stats.daysInMonth; d += 1) {
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, iso, totals: stats.dayTotals.get(iso) || null })
+  }
+  const selectedTx = budgetCalDay
+    ? stats.list.filter((t) => (t.effDate || t.date) === budgetCalDay)
+    : []
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2>${icon('cal')} Calendar</h2>
+        <div class="month-nav">
+          <button class="icon-btn sm" type="button" data-action="budget-cal-prev" aria-label="Previous month">${icon('left')}</button>
+          <button class="ghost-btn compact month-nav-label" type="button" data-action="budget-cal-now" title="${escapeHtml(store.monthLabel(key))}">${escapeHtml(budgetCalLabel(key))}</button>
+          <button class="icon-btn sm" type="button" data-action="budget-cal-next" aria-label="Next month">${icon('right')}</button>
+        </div>
+      </div>
+      <div class="cal-grid">
+        ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => `<span class="cal-dow">${d}</span>`).join('')}
+        ${cells.map((cell) => {
+          if (!cell) return '<span class="cal-day blank"></span>'
+          const totals = cell.totals
+          if (!totals) return `<span class="cal-day"><span class="cal-num">${cell.day}</span></span>`
+          const net = totals.income - totals.expense
+          const cls = ['cal-day', 'has']
+          if (budgetCalDay === cell.iso) cls.push('sel')
+          return `<button class="${cls.join(' ')}" type="button" data-action="budget-cal-select" data-date="${cell.iso}">
+            <span class="cal-num">${cell.day}</span>
+            <i class="cal-amt" style="color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${net >= 0 ? '+' : '−'}${plainMoney(Math.abs(net))}</i>
+          </button>`
+        }).join('')}
+      </div>
+      <p class="muted tight" style="margin-top:8px">Income minus spending for each day. Tap a highlighted day to see what happened.</p>
+      ${budgetCalDay ? `
+      <div class="cal-detail">
+        <div class="cal-detail-top">
+          <b>${escapeHtml(store.formatDate(budgetCalDay))}</b>
+          <span class="muted">${selectedTx.length} transaction${selectedTx.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="list">${selectedTx.length ? selectedTx.map(txRow).join('') : emptyState('Nothing happened on this day.', 'inbox')}</div>
+      </div>` : ''}
+    </section>
+  `
+}
+
+function renderBudgetStats() {
+  const key = budgetCalKey()
+  const s = budgetMonthStats(key)
+  const topCat = s.topCategory ? (store.categoryName(s.topCategory.id) || 'Uncategorised') : '—'
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2>${icon('chart')} Statistics</h2>
+        <span class="item-meta">${escapeHtml(store.monthLabel(key))}</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(s.income)}</b></div>
+        <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(s.expense)}</b></div>
+        <div class="stat"><span class="muted">Net</span><b class="mono ${s.net < 0 ? 'neg' : ''}">${money(s.net)}</b></div>
+      </div>
+      <div class="stat-grid" style="margin-top:10px">
+        <div class="stat"><span class="muted">Avg / day</span><b class="mono">${money(s.avgPerDay)}</b></div>
+        <div class="stat"><span class="muted">Avg / spending day</span><b class="mono">${money(s.avgPerSpentDay)}</b></div>
+        <div class="stat"><span class="muted">Spending days</span><b class="mono">${s.spentDays} / ${s.daysInMonth}</b></div>
+      </div>
+      <div class="stat-grid" style="margin-top:10px">
+        <div class="stat"><span class="muted">Transactions</span><b class="mono">${s.list.length}</b></div>
+        <div class="stat"><span class="muted">Top category</span><b style="font-size:13px">${escapeHtml(topCat)}</b></div>
+        <div class="stat"><span class="muted">Biggest day</span><b style="font-size:13px">${s.busiest ? `${money(s.busiest.expense)} · ${escapeHtml(store.formatDate(s.busiest.date))}` : '—'}</b></div>
+      </div>
+      <p class="muted tight" style="margin-top:10px">Averages cover the whole month (${s.daysInMonth} days). Spending days are days with at least one expense.</p>
+    </section>
+  `
+}
+
 function renderBudgets() {
   const catTotals = store.categoryTotals(month)
   const categories = store.getCategories().map((c) => ({ ...c, spent: catTotals[c.id] || 0 }))
   const spent = categories.reduce((s, c) => s + c.spent, 0)
   const budget = categories.reduce((s, c) => s + c.budget, 0)
+  // Last month's per-source income, shown beside each income source.
+  const prevMonth = (() => {
+    const [y, m] = String(month).split('-').map(Number)
+    const d = new Date(y, m - 2, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
+  const sourceNow = store.sourceTotals(month)
+  const sourcePrev = store.sourceTotals(prevMonth)
 
   return `
     <div class="topbar topbar-inline">
@@ -1306,6 +1472,10 @@ function renderBudgets() {
       </div>
     </section>
 
+    ${renderBudgetStats()}
+
+    ${renderBudgetCalendar()}
+
     <section class="section">
       <div class="section-head">
         <h2>Categories</h2>
@@ -1328,17 +1498,23 @@ function renderBudgets() {
     <section class="section">
       <div class="section-head"><h2>Income sources</h2><button class="ghost-btn compact" data-action="new-source">+ Add</button></div>
       <div class="list">
-        ${store.getSources().map((s) => `
+        ${store.getSources().map((s) => {
+          const now = sourceNow[s.id] || 0
+          const prev = sourcePrev[s.id] || 0
+          return `
           <article class="item" data-action="edit-source" data-id="${s.id}">
             <span class="avatar source">${escapeHtml(s.name.charAt(0).toUpperCase())}</span>
-            <div class="body"><div class="title">${escapeHtml(s.name)}</div></div>
+            <div class="body">
+              <div class="title">${escapeHtml(s.name)}</div>
+              <div class="meta">Last month ${money(prev)} · ${escapeHtml(store.monthLabel(month))} ${money(now)}</div>
+            </div>
             ${budgetEdit ? `
               <div class="row-actions">
                 <button class="mini-btn" type="button" data-action="edit-source" data-id="${s.id}" title="Edit source" aria-label="Edit ${escapeHtml(s.name)}">${icon('edit')}</button>
                 <button class="mini-btn danger" type="button" data-action="delete-source" data-id="${s.id}" data-count="${sourceUsage(s.id)}" title="Delete source" aria-label="Delete ${escapeHtml(s.name)}">${icon('trash')}</button>
-              </div>` : ''}
-          </article>
-        `).join('')}
+              </div>` : `<div class="amount mono">${money(prev)}</div>`}
+          </article>`
+        }).join('')}
       </div>
     </section>
   `
@@ -1474,7 +1650,8 @@ function renderMore() {
           <input type="file" id="csv-input" accept=".csv,text/csv" hidden />
         `)}
         ${settingsRow('safe', 'Backup', `
-          <p class="muted tight">${report.wallets} wallets · ${report.incomes} income · ${report.expenses} expenses · ${report.transfers} transfers</p>
+          <p class="muted tight">A backup holds everything: settings, wallets, budgets, income sources, goals, assets and every transaction.</p>
+          <p class="muted tight">${report.wallets} wallets · ${report.categories} budgets · ${report.sources} income sources · ${report.goals} goals · ${report.incomes} income · ${report.expenses} expenses · ${report.transfers} transfers · ${report.debts} debts · ${report.assets} assets</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
              <button class="ghost-btn" data-action="export-backup">Export backup</button>
              <button class="ghost-btn" data-action="export-backup-pick">Export to location…</button>
@@ -2021,6 +2198,14 @@ document.addEventListener('click', (event) => {
   if (action === 'set-period') { txPeriod = actionEl.dataset.period || 'month'; render(); return }
   if (action === 'clear-search') { txSearch = ''; render(); return }
   if (action === 'chart-period') { chartPeriod = actionEl.dataset.value === 'year' ? 'year' : 'month'; render(); return }
+  if (action === 'budget-cal-prev') { shiftBudgetCal(-1); render(); return }
+  if (action === 'budget-cal-next') { shiftBudgetCal(1); render(); return }
+  if (action === 'budget-cal-now') { budgetCal = null; budgetCalDay = null; render(); return }
+  if (action === 'budget-cal-select') {
+    budgetCalDay = budgetCalDay === actionEl.dataset.date ? null : actionEl.dataset.date
+    render()
+    return
+  }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
@@ -2219,6 +2404,8 @@ document.addEventListener('click', (event) => {
     else { walletDetail = null; render() }
     return
   }
+  if (action === 'wallet-up') { store.moveWallet(actionEl.dataset.id, -1); render(); return }
+  if (action === 'wallet-down') { store.moveWallet(actionEl.dataset.id, 1); render(); return }
   if (action === 'delete-source') {
     const id = actionEl.dataset.id
     const name = store.sourceName(id) || 'this income source'

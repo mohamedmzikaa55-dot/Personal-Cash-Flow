@@ -3,7 +3,7 @@
 // when this file's bytes change, and the shell files below are served
 // cache-first from VERSION — so without a bump, "Check for update" compares
 // identical bytes, finds nothing, and keeps serving the cached old files.
-const VERSION = 'pcf-v20'
+const VERSION = 'pcf-v21'
 const CORE = [
   './',
   './index.html',

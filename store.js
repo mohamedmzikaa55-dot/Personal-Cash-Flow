@@ -13,7 +13,8 @@ export const WALLET_ICONS = ['wallet', 'cash', 'card', 'bank', 'safe', 'phone', 
 export const CATEGORY_ICONS = [
   'tag', 'cart', 'food', 'coffee', 'car', 'bus', 'home', 'bolt', 'tv',
   'music', 'dumbbell', 'health', 'pill', 'book', 'shirt', 'gift', 'plane',
-  'piggy', 'coins', 'pet', 'baby', 'wifi', 'phone', 'game'
+  'piggy', 'coins', 'pet', 'baby', 'wifi', 'phone', 'game', 'repeat',
+  'more', 'handcoin'
 ]
 // Colours offered when picking a wallet's tile colour. Muted to match the UI
 // gallery palette so tiles sit naturally on the near-black green surfaces.
@@ -61,12 +62,12 @@ const DEFAULT_WALLETS = [
 ]
 
 const DEFAULT_CATEGORIES = [
-  { name: 'Other', budget: 1000, icon: 'tag' },
-  { name: 'Debt', budget: 500, icon: 'coins' },
+  { name: 'Other', budget: 1000, icon: 'more' },
+  { name: 'Debt', budget: 500, icon: 'handcoin' },
   { name: 'Entertainment', budget: 4000, icon: 'game' },
   { name: 'Transportation', budget: 600, icon: 'bus' },
   { name: 'Bills', budget: 3000, icon: 'bolt' },
-  { name: 'Subscription', budget: 1000, icon: 'tv' },
+  { name: 'Subscription', budget: 1000, icon: 'repeat' },
   { name: 'Rent', budget: 1000, icon: 'home' },
   { name: 'Work Transportation', budget: 800, icon: 'car' },
   { name: 'Sport', budget: 1000, icon: 'dumbbell' },
@@ -386,7 +387,9 @@ function normalizeAsset(asset) {
     name: str(asset.name, 120) || 'Asset',
     buyingPrice: Math.abs(parseMoney(asset.buyingPrice)),
     sellingPrice: Math.abs(selling),
-    sold: asset.sold === true || Math.abs(selling) > 0,
+    // Only the "sold" tick marks an asset sold — a filled-in selling price on
+    // its own no longer flips it, so unticking the box actually keeps it unsold.
+    sold: asset.sold === true,
     walletId: str(asset.walletId, 60),
     date: isValidISO(asset.date) ? asset.date : '',
     sort: str(asset.sort, 40),
@@ -521,7 +524,20 @@ function migrate(raw) {
     out.settings.rates[legacyCode] = roundRate(out.settings.exchangeRate)
   }
   if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
-  if (Array.isArray(raw.categories) && raw.categories.length) out.categories = raw.categories.map(normalizeCategory)
+  if (Array.isArray(raw.categories) && raw.categories.length) {
+    const oldDefaultIcons = {
+      other: ['tag', 'more'],
+      debt: ['coins', 'handcoin'],
+      dept: ['coins', 'handcoin'],
+      subscription: ['tv', 'repeat']
+    }
+    out.categories = raw.categories.map((category) => {
+      const normalized = normalizeCategory(category)
+      const oldDefault = oldDefaultIcons[normalized.name.toLowerCase()]
+      if (oldDefault && normalized.icon === oldDefault[0]) normalized.icon = oldDefault[1]
+      return normalized
+    })
+  }
   if (Array.isArray(raw.sources) && raw.sources.length) out.sources = raw.sources.map(normalizeSource)
   out.goals = Array.isArray(raw.goals) ? raw.goals.map(normalizeGoal) : []
   out.incomes = Array.isArray(raw.incomes) ? raw.incomes.map(normalizeIncome) : []
@@ -1444,6 +1460,17 @@ export const store = {
     state.wallets = state.wallets.filter((w) => w.id !== id)
     save()
   },
+  // Nudge a wallet up (-1) or down (+1) in the list. The array order is what
+  // every screen shows, so moving within it reorders the wallets everywhere.
+  moveWallet(id, delta) {
+    const from = state.wallets.findIndex((w) => w.id === id)
+    if (from < 0) return
+    const to = from + Math.sign(delta || 0)
+    if (to < 0 || to >= state.wallets.length || to === from) return
+    const [wallet] = state.wallets.splice(from, 1)
+    state.wallets.splice(to, 0, wallet)
+    save()
+  },
 
   // Categories / budgets
   getCategories() {
@@ -1771,11 +1798,15 @@ export const store = {
       expenses: state.expenses.length,
       transfers: state.transfers.length,
       categories: state.categories.length,
+      sources: state.sources.length,
       goals: state.goals.length,
+      assets: state.assets.length,
       debts: state.debts.length
     }
   },
   exportBackup() {
+    // A full dump: settings, wallets, every transaction (income, expense,
+    // transfer, debt), budgets/categories, income sources, goals and assets.
     return JSON.stringify({ app: 'Personal Cash Flow', kind: 'full-backup', version: 1, exportedAt: new Date().toISOString(), data: state }, null, 2)
   },
   importBackup(payload) {
@@ -1783,7 +1814,13 @@ export const store = {
     if (!data || typeof data !== 'object') return false
     const allowed = ['wallets', 'categories', 'sources', 'goals', 'incomes', 'expenses', 'transfers', 'assets', 'debts']
     if (!allowed.some((key) => Array.isArray(data[key]))) return false
-    state = migrate(data)
+    const restored = migrate(data)
+    // migrate() falls back to the starter data when a collection is empty, so a
+    // backup that deliberately holds none of something is restored exactly.
+    allowed.forEach((key) => {
+      if (Array.isArray(data[key]) && data[key].length === 0) restored[key] = []
+    })
+    state = restored
     save()
     return true
   },
