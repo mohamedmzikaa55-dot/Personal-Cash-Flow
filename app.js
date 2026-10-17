@@ -755,14 +755,14 @@ function txRow(tx) {
   let amount = ''
   if (tx.kind === 'income') {
     avatar = `<span class="avatar income">${icon('up')}</span>`
-    title = escapeHtml(tx.name)
+    title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount pos mono">+${money(tx.amount)}</div>`
+    amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${money(tx.amount)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar expense">${icon('down')}</span>`
-    title = escapeHtml(tx.name)
+    title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount neg mono">-${money(tx.amount)}</div>`
+    amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${money(tx.amount)}</div>`
   } else if (tx.kind === 'debt') {
     const info = debtTypeInfo(tx.direction)
     avatar = `<span class="avatar ${info.avatar}">${icon(info.glyph)}</span>`
@@ -787,18 +787,41 @@ function txRow(tx) {
   `
 }
 
-function pendingTransferRow(tx) {
+// One row in the Pending list: a transfer, or an income / expense saved as
+// pending. Releasing it marks the record as moved today.
+function pendingRow(rec) {
+  const actions = `
+      <div class="row-actions">
+        <button class="mini-btn" data-action="edit-transaction" data-kind="${rec.kind}" data-id="${rec.id}" title="Edit" aria-label="Edit pending ${rec.kind}">${icon('edit')}</button>
+        <button class="ghost-btn compact" data-action="release-pending" data-kind="${rec.kind}" data-id="${rec.id}">Release</button>
+      </div>`
+  if (rec.kind === 'transfer') {
+    return `
+      <article class="item">
+        <span class="avatar transfer">${icon('transfer')}</span>
+        <div class="body">
+          <div class="title">${escapeHtml(store.walletName(rec.fromId) || '?')} → ${escapeHtml(store.walletName(rec.toId) || '?')}</div>
+          <div class="meta">${money(rec.amount)}${rec.fee ? ` + fee ${money(rec.fee)}` : ''} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}</div>
+        </div>
+        ${actions}
+      </article>
+    `
+  }
+  const isIncome = rec.kind === 'income'
+  const meta = [
+    `${isIncome ? '+' : '−'}${money(rec.amount)}`,
+    isIncome ? (store.sourceName(rec.sourceId) || 'Income') : (store.categoryName(rec.categoryId) || 'Uncategorised'),
+    store.walletName(rec.walletId) || 'No wallet',
+    `${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}`
+  ].map((bit) => escapeHtml(bit)).join(' · ')
   return `
     <article class="item">
-      <span class="avatar transfer">${icon('transfer')}</span>
+      <span class="avatar ${isIncome ? 'income' : 'expense'}">${icon(isIncome ? 'up' : 'down')}</span>
       <div class="body">
-        <div class="title">${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')}</div>
-        <div class="meta">${money(tx.amount)}${tx.fee ? ` + fee ${money(tx.fee)}` : ''} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}</div>
+        <div class="title">${escapeHtml(rec.name)} <span class="badge gold">Pending</span></div>
+        <div class="meta">${meta}</div>
       </div>
-      <div class="row-actions">
-        <button class="mini-btn" data-action="edit-transaction" data-kind="transfer" data-id="${tx.id}" title="Edit" aria-label="Edit pending transfer">${icon('edit')}</button>
-        <button class="ghost-btn compact" data-action="release-pending" data-id="${tx.id}">Release</button>
-      </div>
+      ${actions}
     </article>
   `
 }
@@ -959,7 +982,7 @@ function patchTxView() {
 }
 
 function renderTransactions() {
-  const pendingTransfers = store.getTransfers().filter((t) => t.pending)
+  const pending = store.getPending()
   const showsMonthNav = txPeriod === 'month' || txPeriod === 'year'
   const periodChips = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']]
   const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']]
@@ -1004,15 +1027,15 @@ function renderTransactions() {
       ${txListHtml()}
     </div>
 
-    ${pendingTransfers.length ? `
+    ${pending.length ? `
     <section class="section" style="margin-top:18px">
       <div class="section-head">
-        <h2>Pending transfers</h2>
+        <h2>Pending transactions</h2>
         <button class="ghost-btn compact" data-action="release-all-pending">Release all</button>
       </div>
-      <p class="muted tight" style="margin-bottom:10px">These transfers are waiting — release one to move the money between wallets.</p>
+      <p class="muted tight" style="margin-bottom:10px">Waiting to be released — nothing here touches your balances or totals until you release it.</p>
       <div class="list">
-        ${pendingTransfers.map(pendingTransferRow).join('')}
+        ${pending.map(pendingRow).join('')}
       </div>
     </section>` : ''}
 
@@ -1233,8 +1256,8 @@ function renderWalletDetail() {
   const tx = store.walletTransactions(wallet.id)
   const income = tx.filter((r) => r.kind === 'income').reduce((s, r) => s + r.amount, 0)
   const expense = tx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
-  const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in' && store.transferCounts(r)).reduce((s, r) => s + r.amount, 0)
-  const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out' && store.transferCounts(r)).reduce((s, r) => s + r.amount + (r.fee || 0), 0)
+  const inflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'in' && store.recordCounts(r)).reduce((s, r) => s + r.amount, 0)
+  const outflow = tx.filter((r) => r.kind === 'transfer' && r.dir === 'out' && store.recordCounts(r)).reduce((s, r) => s + r.amount + (r.fee || 0), 0)
   const walletGoals = store.getGoals(month).filter((g) => g.walletId === wallet.id)
   const parts = walletBreakdown(wallet)
   return `
@@ -1725,8 +1748,8 @@ function renderMore() {
     <section class="section">
       <div class="section-head"><h2>Preferences</h2></div>
       <div class="list">
-        ${settingsRow('cal', 'Pending transfers', `
-          <p class="muted tight">Choose what a transfer marked “Pending” does: wait until you untick it, or move the money right away.</p>
+        ${settingsRow('cal', 'Pending transactions', `
+          <p class="muted tight">Choose what a transfer, income or expense marked “Pending” does: wait until you release it, or move the money right away.</p>
           <div class="chip-row">
             <button class="chip ${settings.pendingAffectsBalance ? '' : 'on'}" data-action="set-pending-behavior" data-value="wait">Don't move money yet</button>
             <button class="chip ${settings.pendingAffectsBalance ? 'on' : ''}" data-action="set-pending-behavior" data-value="count">Count as moved</button>
@@ -2072,6 +2095,9 @@ function renderModal() {
         <label>Source${optionSelect(store.getSources(), r.sourceId, 'sourceId')}</label>
       </div>
       <label>Note (optional)<textarea name="note" maxlength="400">${escapeHtml(r.note || '')}</textarea></label>
+      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="pending" ${r.pending ? 'checked' : ''} style="width:auto" /> Pending — don't move money yet
+      </label>
       ${isEdit && r.repeatGroupId ? `
       <p class="muted tight">This income is part of a repeated series. Saving changes only this occurrence — it becomes an exception.</p>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px">
@@ -2112,6 +2138,9 @@ function renderModal() {
         <label>Category${optionSelect(store.getCategories(), r.categoryId, 'categoryId')}</label>
       </div>
       <label>Note (optional)<textarea name="note" maxlength="400">${escapeHtml(r.note || '')}</textarea></label>
+      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="pending" ${r.pending ? 'checked' : ''} style="width:auto" /> Pending — don't move money yet
+      </label>
       ${isEdit && r.repeatGroupId ? `
       <p class="muted tight">This expense is part of a repeated series. Saving changes only this occurrence — it becomes an exception.</p>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px">
@@ -2626,16 +2655,17 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'release-pending') {
-    store.updateTransaction('transfer', actionEl.dataset.id, { pending: false, releasedDate: store.todayISO() })
-    toast('Transfer released')
+    const kind = actionEl.dataset.kind || 'transfer'
+    store.updateTransaction(kind, actionEl.dataset.id, { pending: false, releasedDate: store.todayISO() })
+    toast('Released')
     render()
     return
   }
   if (action === 'release-all-pending') {
-    const waiting = store.getTransfers().filter((t) => t.pending)
+    const waiting = store.getPending()
     const today = store.todayISO()
-    waiting.forEach((t) => store.updateTransaction('transfer', t.id, { pending: false, releasedDate: today }))
-    toast(`Released ${waiting.length} transfer${waiting.length === 1 ? '' : 's'}`)
+    waiting.forEach((rec) => store.updateTransaction(rec.kind, rec.id, { pending: false, releasedDate: today }))
+    toast(`Released ${waiting.length} transaction${waiting.length === 1 ? '' : 's'}`)
     render()
     return
   }
@@ -2706,6 +2736,16 @@ document.addEventListener('submit', (event) => {
   const data = new FormData(form)
   const get = (key) => String(data.get(key) || '').trim()
   const num = (key) => store.parseMoney(get(key))
+  // Pending income / expense / transfer: re-ticking clears any earlier release,
+  // and unticking releases it today — the day the money actually moves.
+  const pendingFields = (kind) => {
+    const pending = data.get('pending') === 'on'
+    const existing = id ? store.findTransaction(kind, id) : null
+    if (pending) return { pending: true, releasedDate: '' }
+    return existing && existing.pending
+      ? { pending: false, releasedDate: store.todayISO() }
+      : { pending: false }
+  }
 
   if (type === 'wallet') {
     const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency'), color: get('color'), icon: get('icon') }
@@ -2733,7 +2773,7 @@ document.addEventListener('submit', (event) => {
     else store.addGoal(fields)
     toast(id ? 'Goal updated' : 'Goal added')
   } else if (type === 'income') {
-    const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
+    const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('income') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('income', id) : null
@@ -2743,9 +2783,9 @@ document.addEventListener('submit', (event) => {
     if (id && data.get('applySeries') === 'on') store.updateSeries('income', id, fields)
     else if (id) store.updateTransaction('income', id, fields)
     else store.addIncome(fields)
-    toast(id ? 'Income updated' : 'Income added')
+    toast(id ? 'Income updated' : (fields.pending ? 'Pending income added' : 'Income added'))
   } else if (type === 'expense') {
-    const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays') }
+    const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('expense') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('expense', id) : null
@@ -2754,7 +2794,9 @@ document.addEventListener('submit', (event) => {
     }
     // Monthly goals: a strict goal refuses the expense outright; a soft goal
     // asks for confirmation before it is saved.
-    const hits = store.goalsHitByExpense(fields, id || '')
+    // A pending expense does not move money yet, so it is not weighed against
+    // the month's goals or the wallet balance until it is released.
+    const hits = fields.pending ? [] : store.goalsHitByExpense(fields, id || '')
     if (hits.length) {
       const lines = hits.map((h) => `• ${h.goal.name}: ${money(h.next)} of ${money(h.goal.limit)}${store.monthLabel(h.month) ? ` in ${store.monthLabel(h.month)}` : ''}`).join('\n')
       if (hits.some((h) => h.goal.strict)) {
@@ -2769,7 +2811,7 @@ document.addEventListener('submit', (event) => {
     }
     // The wallet's allowable amount is what lets an expense through even when
     // the balance alone would not cover it — ask before going past it.
-    const spentOn = fields.walletId ? store.findWallet(fields.walletId) : null
+    const spentOn = !fields.pending && fields.walletId ? store.findWallet(fields.walletId) : null
     if (spentOn) {
       const existing = id ? store.findTransaction('expense', id) : null
       const room = existing && existing.walletId === fields.walletId
@@ -2786,17 +2828,13 @@ document.addEventListener('submit', (event) => {
     if (id && data.get('applySeries') === 'on') store.updateSeries('expense', id, fields)
     else if (id) store.updateTransaction('expense', id, fields)
     else store.addExpense(fields)
-    toast(id ? 'Expense updated' : 'Expense added')
+    toast(id ? 'Expense updated' : (fields.pending ? 'Pending expense added' : 'Expense added'))
   } else if (type === 'transfer') {
     const fromId = get('fromId')
     const toId = get('toId')
     if (!fromId || !toId || fromId === toId) { toast('Pick two different wallets'); return }
-    const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note'), pending: data.get('pending') === 'on' }
+    const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note'), ...pendingFields('transfer') }
     if (!fields.amount) { toast('Enter an amount'); return }
-    // Unticking "Pending" in the edit form releases the transfer — stamp the
-    // released date exactly like the Release button does.
-    const existingTransfer = id ? store.findTransaction('transfer', id) : null
-    if (existingTransfer && existingTransfer.pending && !fields.pending) fields.releasedDate = store.todayISO()
     if (id) store.updateTransaction('transfer', id, fields)
     else store.addTransfer(fields)
     toast(id ? 'Transfer updated' : (fields.pending ? 'Pending transfer added' : 'Transfer added'))

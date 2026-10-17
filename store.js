@@ -124,9 +124,10 @@ export function nowTime(date = new Date()) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-// A pending transfer only moves money when the user opts to count them.
-function transferCounts(transfer) {
-  return !transfer.pending || state.settings.pendingAffectsBalance === true
+// A pending record — transfer, income or expense — only moves money when the
+// user opts to count them.
+function recordCounts(record) {
+  return !record.pending || state.settings.pendingAffectsBalance === true
 }
 
 // A skipped occurrence of a recurring series is kept for the calendar but does
@@ -300,6 +301,10 @@ function baseRecord(rec) {
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     walletId: str(rec.walletId, 60),
     note: str(rec.note, 400),
+    // Income and expense can be marked pending, exactly like a transfer: the
+    // money only moves once the record is released.
+    pending: rec.pending === true,
+    releasedDate: isValidISO(rec.releasedDate) ? rec.releasedDate : '',
     createdAt: rec.createdAt || new Date().toISOString()
   }
 }
@@ -791,13 +796,13 @@ function walletBalance(id) {
   if (!wallet) return 0
   let total = parseMoney(wallet.start)
   state.incomes.forEach((r) => {
-    if (r.walletId === id && isDue(r) && isActive(r)) total += r.amount
+    if (r.walletId === id && isDue(r) && isActive(r) && recordCounts(r)) total += r.amount
   })
   state.expenses.forEach((r) => {
-    if (r.walletId === id && isDue(r) && isActive(r)) total -= r.amount
+    if (r.walletId === id && isDue(r) && isActive(r) && recordCounts(r)) total -= r.amount
   })
   state.transfers.forEach((t) => {
-    if (!transferCounts(t) || !isDue(t)) return
+    if (!recordCounts(t) || !isDue(t)) return
     if (t.fromId === id) total -= t.amount + t.fee
     if (t.toId === id) total += t.amount
   })
@@ -877,9 +882,9 @@ function walletTotals() {
 function monthItems(month) {
   const inMonth = (date) => monthKey(date) === month
   return {
-    incomes: state.incomes.filter((r) => inMonth(r.date) && isDue(r) && isActive(r)),
-    expenses: state.expenses.filter((r) => inMonth(r.date) && isDue(r) && isActive(r)),
-    transfers: state.transfers.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && transferCounts(r))
+    incomes: state.incomes.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r)),
+    expenses: state.expenses.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r)),
+    transfers: state.transfers.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && recordCounts(r))
   }
 }
 
@@ -895,7 +900,7 @@ function monthSummary(month) {
 function categoryTotals(month) {
   const totals = {}
   state.expenses.forEach((r) => {
-    if (monthKey(r.date) !== month || !isDue(r) || !isActive(r)) return
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return
     totals[r.categoryId] = (totals[r.categoryId] || 0) + r.amount
   })
   return totals
@@ -904,7 +909,7 @@ function categoryTotals(month) {
 function sourceTotals(month) {
   const totals = {}
   state.incomes.forEach((r) => {
-    if (monthKey(r.date) !== month || !isDue(r) || !isActive(r)) return
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return
     totals[r.sourceId] = (totals[r.sourceId] || 0) + r.amount
   })
   return totals
@@ -915,7 +920,7 @@ function sourceTotals(month) {
 // Expenses that fall inside a goal's scope during `month`.
 function goalExpenses(goal, month) {
   return state.expenses.filter((r) => {
-    if (monthKey(r.date) !== month || !isDue(r) || !isActive(r)) return false
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return false
     if (goal.walletId && r.walletId !== goal.walletId) return false
     if (goal.categoryId && r.categoryId !== goal.categoryId) return false
     return true
@@ -978,9 +983,9 @@ function goalsHitByExpense(fields, excludeTxId) {
 
 function allTransactions() {
   const list = [
-    ...state.incomes.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'income' })),
-    ...state.expenses.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'expense' })),
-    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) }))
+    ...state.incomes.filter((r) => isDue(r) && isActive(r) && recordCounts(r)).map((r) => ({ ...r, kind: 'income', effDate: effectiveDate(r) })),
+    ...state.expenses.filter((r) => isDue(r) && isActive(r) && recordCounts(r)).map((r) => ({ ...r, kind: 'expense', effDate: effectiveDate(r) })),
+    ...state.transfers.filter((r) => isDue(r) && recordCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) }))
     // Debts live in their own section on the Activity tab, so they are kept out
     // of the income / expense / transfer feed.
   ]
@@ -1047,7 +1052,7 @@ function repeatingSchedules(kind) {
 function nextScheduledAt() {
   const now = new Date()
   const pending = [...state.incomes, ...state.expenses, ...state.transfers]
-    .filter((record) => transferCounts(record) && isActive(record) && !isDue(record))
+    .filter((record) => recordCounts(record) && isActive(record) && !isDue(record))
     .map((record) => new Date(`${effectiveDate(record)}T${record.time || '00:00'}:00`))
     .filter((date) => Number.isFinite(date.getTime()) && date > now)
   const earliest = pending.reduce((timestamp, date) => Math.min(timestamp, date.getTime()), Infinity)
@@ -1486,7 +1491,7 @@ export const store = {
     state.settings.pendingAffectsBalance = value === true
     save()
   },
-  transferCounts,
+  recordCounts,
 
   // Wallets
   getWallets() {
@@ -1608,6 +1613,16 @@ export const store = {
   },
   getTransfers() {
     return state.transfers.slice().sort((a, b) => (a.date < b.date ? 1 : -1))
+  },
+  // Everything waiting to be released: transfers, income and expense that were
+  // saved as pending. They stay out of balances and totals until released.
+  getPending() {
+    const rows = [
+      ...state.transfers.filter((t) => t.pending).map((t) => ({ ...t, kind: 'transfer' })),
+      ...state.incomes.filter((r) => r.pending).map((r) => ({ ...r, kind: 'income' })),
+      ...state.expenses.filter((r) => r.pending).map((r) => ({ ...r, kind: 'expense' }))
+    ]
+    return rows.sort(byDateTimeAsc)
   },
   getTransactions() {
     return allTransactions()
@@ -1843,8 +1858,8 @@ export const store = {
     for (let i = count - 1; i >= 0; i -= 1) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const income = state.incomes.filter((r) => monthKey(r.date) === key && isDue(r) && isActive(r)).reduce((s, r) => s + r.amount, 0)
-      const expense = state.expenses.filter((r) => monthKey(r.date) === key && isDue(r) && isActive(r)).reduce((s, r) => s + r.amount, 0)
+      const income = state.incomes.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r)).reduce((s, r) => s + r.amount, 0)
+      const expense = state.expenses.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r)).reduce((s, r) => s + r.amount, 0)
       out.push({ month: key, label: d.toLocaleDateString(undefined, { month: 'short' }), income, expense, net: income - expense })
     }
     return out
@@ -1854,10 +1869,10 @@ export const store = {
   walletTransactions(id) {
     const rows = []
     state.incomes.forEach((r) => {
-      if (r.walletId === id && isDue(r) && isActive(r)) rows.push({ ...r, kind: 'income' })
+      if (r.walletId === id && isDue(r) && isActive(r) && recordCounts(r)) rows.push({ ...r, kind: 'income', effDate: effectiveDate(r) })
     })
     state.expenses.forEach((r) => {
-      if (r.walletId === id && isDue(r) && isActive(r)) rows.push({ ...r, kind: 'expense' })
+      if (r.walletId === id && isDue(r) && isActive(r) && recordCounts(r)) rows.push({ ...r, kind: 'expense', effDate: effectiveDate(r) })
     })
     state.transfers.forEach((t) => {
       if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out', effDate: effectiveDate(t) })
