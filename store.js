@@ -394,14 +394,38 @@ function normalizeAsset(asset) {
   }
 }
 
+// The four ways money moves for a debt:
+//   Lent    — you hand money from a wallet to a person (to be collected back).
+//   Collect — that person pays you back into the wallet.
+//   Borrow  — you take money from a person into a wallet (to be returned).
+//   Return  — you pay that person back from the wallet.
+// Lent/Return take money OUT of the wallet; Collect/Borrow bring money IN.
+const DEBT_DIRECTIONS = ['Lent', 'Collect', 'Borrow', 'Return']
+const DEBT_WALLET_SIGN = { Lent: -1, Collect: 1, Borrow: 1, Return: -1 }
+
+// Map a free-text Type / Status column onto one of the four debt directions.
+function debtDirectionFrom(value) {
+  const raw = String(value == null ? '' : value).toLowerCase()
+  if (raw.includes('borrow')) return 'Borrow'
+  if (raw.includes('return')) return 'Return'
+  if (raw.includes('collect')) return 'Collect'
+  return 'Lent'
+}
+
 function normalizeDebt(debt) {
+  const direction = DEBT_DIRECTIONS.includes(debt.direction) ? debt.direction : 'Lent'
   return {
     id: debt.id || uid('d'),
+    // A short description of what the debt was for, plus a phone / reference
+    // number kept with the person.
+    name: str(debt.name != null ? debt.name : debt.description, 120),
     person: str(debt.person, 80) || 'Someone',
+    number: str(debt.number, 40),
     amount: Math.abs(parseMoney(debt.amount)),
-    direction: debt.direction === 'Collect' ? 'Collect' : 'Lent',
+    direction,
     walletId: str(debt.walletId, 60),
     date: isValidISO(debt.date) ? debt.date : '',
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(debt.time || '')) ? debt.time : '',
     expectedDate: isValidISO(debt.expectedDate) ? debt.expectedDate : '',
     property: Boolean(debt.property),
     note: str(debt.note, 300),
@@ -705,7 +729,7 @@ function walletBalance(id) {
   })
   state.debts.forEach((d) => {
     if (d.walletId !== id) return
-    total += d.direction === 'Lent' ? -d.amount : d.amount
+    total += (DEBT_WALLET_SIGN[d.direction] || -1) * d.amount
   })
   return round2(total)
 }
@@ -876,7 +900,8 @@ function allTransactions() {
   const list = [
     ...state.incomes.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'income' })),
     ...state.expenses.filter((r) => isDue(r) && isActive(r)).map((r) => ({ ...r, kind: 'expense' })),
-    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) }))
+    ...state.transfers.filter((r) => isDue(r) && transferCounts(r)).map((t) => ({ ...t, kind: 'transfer', effDate: effectiveDate(t) })),
+    ...state.debts.filter(isActive).map((d) => ({ ...d, kind: 'debt' }))
   ]
   return list.sort((a, b) => {
     const da = a.effDate || a.date
@@ -948,18 +973,62 @@ function nextScheduledAt() {
   return Number.isFinite(earliest) ? earliest : null
 }
 
+// Roll-up of every debt transaction: what is still owed to you (Lent not yet
+// collected) and what you still owe (Borrow not yet returned).
+function debtSummary() {
+  const totals = { Lent: 0, Collect: 0, Borrow: 0, Return: 0 }
+  state.debts.forEach((d) => { totals[d.direction] = (totals[d.direction] || 0) + d.amount })
+  return {
+    lent: round2(totals.Lent),
+    collected: round2(totals.Collect),
+    borrowed: round2(totals.Borrow),
+    returned: round2(totals.Return),
+    outstanding: round2(Math.max(0, totals.Lent - totals.Collect)),
+    payable: round2(Math.max(0, totals.Borrow - totals.Return))
+  }
+}
+
+// Per-person roll-up so a Lent can be collected, or a Borrow returned, in as
+// many pieces as needed — each Collect / Return simply reduces the balance for
+// that person.
+function debtPeople() {
+  const rows = new Map()
+  state.debts.forEach((d) => {
+    const person = d.person || 'Someone'
+    if (!rows.has(person)) {
+      rows.set(person, { person, lent: 0, collected: 0, borrowed: 0, returned: 0, count: 0, last: '' })
+    }
+    const row = rows.get(person)
+    row.count += 1
+    if (d.direction === 'Lent') row.lent += d.amount
+    else if (d.direction === 'Collect') row.collected += d.amount
+    else if (d.direction === 'Borrow') row.borrowed += d.amount
+    else if (d.direction === 'Return') row.returned += d.amount
+    if ((d.date || '') > row.last) row.last = d.date || ''
+  })
+  return [...rows.values()].map((row) => ({
+    ...row,
+    lent: round2(row.lent),
+    collected: round2(row.collected),
+    borrowed: round2(row.borrowed),
+    returned: round2(row.returned),
+    receivable: round2(Math.max(0, row.lent - row.collected)),
+    payable: round2(Math.max(0, row.borrowed - row.returned))
+  }))
+}
+
 function netWorth() {
   const totals = walletTotals()
   const cash = round2(totals.main + totals.allowable + totals.foreign)
   const assets = state.assets.filter((a) => !a.sold).reduce((sum, a) => sum + a.buyingPrice, 0)
-  const lent = state.debts.filter((d) => d.direction === 'Lent' && !d.settled).reduce((sum, d) => sum + d.amount, 0)
-  const collected = state.debts.filter((d) => d.direction === 'Collect').reduce((sum, d) => sum + d.amount, 0)
+  const debt = debtSummary()
   return {
     cash,
     ...totals,
     assets,
-    receivable: Math.max(0, lent - collected),
-    total: round2(cash + assets + Math.max(0, lent - collected))
+    receivable: debt.outstanding,
+    payable: debt.payable,
+    total: round2(cash + assets + debt.outstanding - debt.payable)
   }
 }
 
@@ -1172,8 +1241,10 @@ function importDebts(text) {
     if (!person || !amount) return
     state.debts.push(normalizeDebt({
       person,
+      name: str(pick(row, 'Description', 'Name'), 120),
+      number: str(pick(row, 'Number', 'Phone'), 40),
       amount,
-      direction: /collect/i.test(pick(row, 'Status', 'Collect/Return')) ? 'Collect' : 'Lent',
+      direction: debtDirectionFrom(pick(row, 'Type', 'Status', 'Collect/Return')),
       walletId: ensureWallet(refName(pick(row, 'Wallets', 'Wallet'))),
       date: parseDate(pick(row, 'Date')),
       expectedDate: parseDate(pick(row, 'Expecting Date')),
@@ -1581,7 +1652,16 @@ export const store = {
 
   // Debts
   getDebts() {
-    return state.debts.map((d) => ({ ...d }))
+    return state.debts.slice().sort((a, b) => {
+      const da = a.date || ''
+      const db = b.date || ''
+      return da === db
+        ? String(b.time || '').localeCompare(String(a.time || ''))
+        : (da < db ? 1 : -1)
+    }).map((d) => ({ ...d }))
+  },
+  findDebt(id) {
+    return state.debts.find((d) => d.id === id) || null
   },
   addDebt(fields) {
     const debt = normalizeDebt(fields)
@@ -1599,11 +1679,8 @@ export const store = {
     state.debts = state.debts.filter((d) => d.id !== id)
     save()
   },
-  debtSummary() {
-    const lent = state.debts.filter((d) => d.direction === 'Lent').reduce((sum, d) => sum + d.amount, 0)
-    const collected = state.debts.filter((d) => d.direction === 'Collect').reduce((sum, d) => sum + d.amount, 0)
-    return { lent, collected, outstanding: Math.max(0, lent - collected) }
-  },
+  debtSummary,
+  debtPeople,
 
   // Goals (optional monthly spending limits)
   getGoals(month) {
@@ -1671,6 +1748,9 @@ export const store = {
     state.transfers.forEach((t) => {
       if (isDue(t) && (t.fromId === id || t.toId === id)) rows.push({ ...t, kind: 'transfer', dir: t.toId === id ? 'in' : 'out', effDate: effectiveDate(t) })
     })
+    state.debts.forEach((d) => {
+      if (d.walletId === id && isActive(d)) rows.push({ ...d, kind: 'debt' })
+    })
     return rows.sort((a, b) => {
       const da = a.effDate || a.date
       const db = b.effDate || b.date
@@ -1691,7 +1771,8 @@ export const store = {
       expenses: state.expenses.length,
       transfers: state.transfers.length,
       categories: state.categories.length,
-      goals: state.goals.length
+      goals: state.goals.length,
+      debts: state.debts.length
     }
   },
   exportBackup() {

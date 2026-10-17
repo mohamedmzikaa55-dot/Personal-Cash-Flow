@@ -255,6 +255,7 @@ function icon(name) {
     baby: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10.3h.01M15 10.3h.01"/><path d="M9 15c.8.9 1.9 1.4 3 1.4s2.2-.5 3-1.4"/></svg>',
     wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a8 8 0 0 1 10 0"/><path d="M10 16.4a4 4 0 0 1 4 0"/><circle cx="12" cy="19.4" r="1"/></svg>',
     game: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8" width="19" height="9.5" rx="4.5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="11.6" r="1"/><circle cx="18.2" cy="13.8" r="1"/></svg>',
+    person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.6 20a7.4 7.4 0 0 1 14.8 0"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
   }
   return icons[name] || ''
@@ -372,7 +373,7 @@ function renderDashboard() {
           <span class="tile-figure">${summary.net < 0 ? `${money(Math.abs(summary.net))} over` : `${money(summary.net)} kept`}</span>
         </div>
       </div>
-      <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}</p>
+      <p class="sub" style="margin-top:12px">${escapeHtml(store.monthLabel(month))} · assets ${money(totals.assets)} · receivable ${money(totals.receivable)}${totals.payable ? ` · payable ${money(totals.payable)}` : ''}</p>
       ${walletsTotalsLine(totals)}
     </section>
 
@@ -597,6 +598,43 @@ function budgetBar(category) {
   `
 }
 
+// How each debt type moves money, and how its rows should read. Lent / Return
+// take money out of a wallet; Collect / Borrow bring money in.
+const DEBT_TYPES = {
+  Lent: { label: 'Lent', badge: 'red', avatar: 'expense', glyph: 'up', sign: 'neg', hint: 'You gave this from the wallet. Collect it back from the person — in one go or in pieces.' },
+  Collect: { label: 'Collect', badge: 'green', avatar: 'income', glyph: 'down', sign: 'pos', hint: 'This person paid you back, so the money goes into the wallet.' },
+  Borrow: { label: 'Borrow', badge: 'gold', avatar: 'income', glyph: 'down', sign: 'pos', hint: 'You took this from the person into the wallet. Return it later — in one go or in pieces.' },
+  Return: { label: 'Return', badge: 'red', avatar: 'expense', glyph: 'up', sign: 'neg', hint: 'You paid the person back, so the money leaves the wallet.' }
+}
+
+function debtTypeInfo(direction) {
+  return DEBT_TYPES[direction] || DEBT_TYPES.Lent
+}
+
+// One debt row, used by the Debts section and the activity list.
+function debtRow(d) {
+  const info = debtTypeInfo(d.direction)
+  const title = escapeHtml(d.name || d.person)
+  const personBit = d.name ? ` <span class="muted">· ${escapeHtml(d.person)}</span>` : ''
+  const bits = [
+    `<span class="badge ${info.badge}">${info.label}</span>`,
+    d.date ? `${store.formatDate(d.date)}${d.time ? ` · ${d.time}` : ''}` : '',
+    d.expectedDate ? `due ${store.formatDate(d.expectedDate)}` : '',
+    d.walletId ? escapeHtml(store.walletName(d.walletId)) : '',
+    d.number ? `☎ ${escapeHtml(d.number)}` : ''
+  ].filter(Boolean)
+  return `
+    <article class="item" data-action="edit-debt" data-id="${d.id}">
+      <span class="avatar ${info.avatar}">${icon(info.glyph)}</span>
+      <div class="body">
+        <div class="title">${title}${personBit}</div>
+        <div class="meta">${bits.join(' · ')}</div>
+      </div>
+      <div class="amount ${info.sign} mono">${info.sign === 'pos' ? '+' : '−'}${money(d.amount)}</div>
+    </article>
+  `
+}
+
 function txRow(tx) {
   let avatar = ''
   let title = ''
@@ -612,6 +650,12 @@ function txRow(tx) {
     title = escapeHtml(tx.name)
     meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
     amount = `<div class="amount neg mono">-${money(tx.amount)}</div>`
+  } else if (tx.kind === 'debt') {
+    const info = debtTypeInfo(tx.direction)
+    avatar = `<span class="avatar ${info.avatar}">${icon(info.glyph)}</span>`
+    title = `${escapeHtml(tx.name || tx.person)} <span class="badge ${info.badge}">${info.label}</span>`
+    meta = `${escapeHtml(tx.person)} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
+    amount = `<div class="amount ${info.sign} mono">${info.sign === 'pos' ? '+' : '-'}${money(tx.amount)}</div>`
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
@@ -619,7 +663,7 @@ function txRow(tx) {
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${money(tx.amount)}</div>`
   }
   return `
-    <article class="item" data-action="edit-transaction" data-kind="${tx.kind}" data-id="${tx.id}">
+    <article class="item" data-action="${tx.kind === 'debt' ? 'edit-debt' : 'edit-transaction'}" data-kind="${tx.kind}" data-id="${tx.id}">
       ${avatar}
       <div class="body">
         <div class="title">${title}</div>
@@ -699,6 +743,7 @@ function txHaystack(t) {
   if (t.kind === 'income') bits.push(store.sourceName(t.sourceId))
   if (t.kind === 'expense') bits.push(store.categoryName(t.categoryId))
   if (t.kind === 'transfer') bits.push(store.walletName(t.fromId), store.walletName(t.toId))
+  if (t.kind === 'debt') bits.push(t.person, t.number, t.direction)
   bits.push(store.walletName(t.walletId), t.effDate || t.date, String(t.amount))
   return bits.filter(Boolean).join(' ').toLowerCase()
 }
@@ -804,7 +849,7 @@ function renderTransactions() {
   const pendingTransfers = store.getTransfers().filter((t) => t.pending)
   const showsMonthNav = txPeriod === 'month' || txPeriod === 'year'
   const periodChips = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']]
-  const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers']]
+  const kindChips = [['all', 'All'], ['income', 'Income'], ['expense', 'Expense'], ['transfer', 'Transfers'], ['debt', 'Debts']]
   return `
     <div class="topbar topbar-inline">
       <div>
@@ -1341,6 +1386,8 @@ function currencySettingsHtml(settings, currencies) {
 function renderMore() {
   const settings = store.getSettings()
   const debts = store.debtSummary()
+  const debtList = store.getDebts()
+  const debtPeople = store.debtPeople().filter((p) => p.receivable > 0 || p.payable > 0)
   const assets = store.getAssets()
   const report = store.importReport()
   // The same currency list the wallet form offers, so a main/secondary
@@ -1395,18 +1442,22 @@ function renderMore() {
 
     <section class="section">
       <div class="section-head"><h2>Debts</h2><button class="ghost-btn compact" data-action="new-debt">+ Add</button></div>
-      <p class="muted tight" style="margin-bottom:10px">Lent ${money(debts.lent)} · collected ${money(debts.collected)} · outstanding ${money(debts.outstanding)}</p>
-      <div class="list">
-        ${store.getDebts().length ? store.getDebts().map((d) => `
-          <article class="item" data-action="edit-debt" data-id="${d.id}">
-            <span class="avatar ${d.direction === 'Collect' ? 'income' : 'expense'}">${d.direction === 'Collect' ? icon('down') : icon('up')}</span>
+      <p class="muted tight" style="margin-bottom:10px">Lent ${money(debts.lent)} · collected ${money(debts.collected)} · still to collect ${money(debts.outstanding)}</p>
+      ${(debts.borrowed || debts.returned) ? `<p class="muted tight" style="margin-bottom:10px">Borrowed ${money(debts.borrowed)} · returned ${money(debts.returned)} · still to return ${money(debts.payable)}</p>` : ''}
+      ${debtPeople.length ? `
+      <div class="list" style="margin-bottom:10px">
+        ${debtPeople.map((p) => `
+          <article class="item">
+            <span class="avatar debt">${icon('person')}</span>
             <div class="body">
-              <div class="title">${escapeHtml(d.person)}</div>
-              <div class="meta"><span class="badge ${d.direction === 'Collect' ? 'green' : 'red'}">${d.direction}</span>${d.date ? store.formatDate(d.date) : ''}${d.expectedDate ? ` · due ${store.formatDate(d.expectedDate)}` : ''}${d.walletId ? ` · ${escapeHtml(store.walletName(d.walletId))}` : ''}</div>
+              <div class="title">${escapeHtml(p.person)}</div>
+              <div class="meta">${[p.receivable ? `owes you ${money(p.receivable)}` : '', p.payable ? `you owe ${money(p.payable)}` : '', `${p.count} record${p.count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</div>
             </div>
-            <div class="amount ${d.direction === 'Collect' ? 'pos' : 'neg'} mono">${money(d.amount)}</div>
           </article>
-        `).join('') : emptyState('No debts tracked.', 'inbox')}
+        `).join('')}
+      </div>` : ''}
+      <div class="list">
+        ${debtList.length ? debtList.map(debtRow).join('') : emptyState('No debts tracked.', 'inbox')}
       </div>
     </section>
 
@@ -1553,6 +1604,11 @@ function renderModal() {
             <button class="choose-item" data-action="open-transfer">
               <span class="avatar transfer">${icon('transfer')}</span>
               <span class="choose-body"><b>Transfer</b><span class="muted">Move between wallets</span></span>
+              ${icon('right')}
+            </button>
+            <button class="choose-item" data-action="open-debt">
+              <span class="avatar debt">${icon('person')}</span>
+              <span class="choose-body"><b>Debt</b><span class="muted">Lend, collect, borrow or return</span></span>
               ${icon('right')}
             </button>
             <button class="choose-item" data-action="new-goal">
@@ -1786,18 +1842,30 @@ function renderModal() {
     `
   } else if (modal === 'debt') {
     const d = modalPayload || {}
-    title = `${isEdit ? 'Edit' : 'New'} debt`
+    const direction = DEBT_TYPES[d.direction] ? d.direction : 'Lent'
+    title = `${isEdit ? 'Edit' : 'New'} debt transaction`
     body = `
-      <label>Person / party<input name="person" required maxlength="80" value="${escapeHtml(d.person || '')}" /></label>
+      <label>Description<input name="name" maxlength="120" value="${escapeHtml(d.name || '')}" placeholder="What is this debt for?" /></label>
       <div class="row2">
-        <label>Amount<input name="amount" type="number" step="0.01" required value="${d.amount ? Number(d.amount) : ''}" /></label>
-        <label>Type<select name="direction"><option ${d.direction !== 'Collect' ? 'selected' : ''}>Lent</option><option ${d.direction === 'Collect' ? 'selected' : ''} value="Collect">Collect</option></select></label>
+        <label>Person<input name="person" required maxlength="80" value="${escapeHtml(d.person || '')}" placeholder="Who?" /></label>
+        <label>Number<input name="number" maxlength="40" value="${escapeHtml(d.number || '')}" placeholder="Phone or reference" /></label>
       </div>
+      <div class="row2">
+        <label>Amount<input name="amount" type="number" step="0.01" required value="${d.amount ? Number(d.amount) : ''}" placeholder="0.00" /></label>
+        <label>Type<select name="direction" data-debt-direction>
+          ${Object.keys(DEBT_TYPES).map((key) => `<option value="${key}" ${key === direction ? 'selected' : ''}>${key}</option>`).join('')}
+        </select></label>
+      </div>
+      <p class="muted tight" id="debt-type-hint" style="margin-top:-4px">${escapeHtml(debtTypeInfo(direction).hint)}</p>
       <div class="row2">
         <label>Date<input name="date" type="date" value="${d.date || store.todayISO()}" /></label>
+        <label>Time<input name="time" type="time" value="${escapeHtml(d.time || store.nowTime())}" /></label>
+      </div>
+      <div class="row2">
+        <label>Wallet${walletSelect(d.walletId, 'walletId', false)}</label>
         <label>Expected date<input name="expectedDate" type="date" value="${d.expectedDate || ''}" /></label>
       </div>
-      <label>Wallet${walletSelect(d.walletId, 'walletId', false)}</label>
+      <p class="muted tight" style="margin-top:-4px">Lent and Return take money out of the chosen wallet; Collect and Borrow put it in. A Lent can be collected back — and a Borrow returned — in one go or in several records.</p>
     `
   }
 
@@ -1845,7 +1913,7 @@ function render() {
         ${screen === 'budgets' ? renderBudgets() : ''}
         ${screen === 'more' ? renderMore() : ''}
       </main>
-      ${showFab ? `<button class="fab" data-action="open-add" aria-label="Add income, expense, transfer or wallet">${icon('plus')}</button>` : ''}
+      ${showFab ? `<button class="fab" data-action="open-add" aria-label="Add income, expense, transfer, debt or wallet">${icon('plus')}</button>` : ''}
       <nav class="tabbar">
         ${[
           ['home', 'Home', 'home'],
@@ -2066,6 +2134,7 @@ document.addEventListener('click', (event) => {
   if (action === 'open-income') { openModal('income', {}, fromChoose); return }
   if (action === 'open-expense') { openModal('expense', {}, fromChoose); return }
   if (action === 'open-transfer') { openModal('transfer', {}, fromChoose); return }
+  if (action === 'open-debt') { openModal('debt', {}, fromChoose); return }
   if (action === 'open-choose') { openModal('choose', null); return }
   if (action === 'open-wallet-new') { openModal('wallet', {}, fromChoose); return }
 
@@ -2367,8 +2436,9 @@ document.addEventListener('submit', (event) => {
     else store.addAsset(fields)
     toast(id ? 'Asset updated' : 'Asset added')
   } else if (type === 'debt') {
-    const fields = { person: get('person'), amount: num('amount'), direction: get('direction'), walletId: get('walletId'), date: get('date'), expectedDate: get('expectedDate') }
-    if (!fields.person || !fields.amount) return
+    const fields = { name: get('name'), person: get('person'), number: get('number'), amount: num('amount'), direction: get('direction'), walletId: get('walletId'), date: get('date'), time: get('time'), expectedDate: get('expectedDate') }
+    if (!fields.person) { toast('Enter a person'); return }
+    if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateDebt(id, fields)
     else store.addDebt(fields)
     toast(id ? 'Debt updated' : 'Debt added')
@@ -2406,6 +2476,11 @@ document.addEventListener('change', (event) => {
     store.setRate(el.dataset.rate, value)
     toast('Rate saved')
     render()
+    return
+  }
+  if (el && el.matches && el.matches('select[data-debt-direction]')) {
+    const hint = document.getElementById('debt-type-hint')
+    if (hint) hint.textContent = debtTypeInfo(el.value).hint
     return
   }
   if (el && el.matches && el.matches('select[data-repeat]')) {

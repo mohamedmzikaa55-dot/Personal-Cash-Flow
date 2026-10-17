@@ -1102,6 +1102,11 @@ h2 svg {
   color: var(--accent);
 }
 
+.avatar.debt {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
 .item .body {
   min-width: 0;
 }
@@ -1885,6 +1890,11 @@ label,
 .choose-item .avatar.goal {
   background: var(--gold-soft);
   color: var(--gold);
+}
+
+.choose-item .avatar.debt {
+  background: var(--purple-soft);
+  color: var(--purple);
 }
 
 .choose-item > svg {
