@@ -229,6 +229,7 @@ function icon(name) {
     inbox: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13l1.5 8v5a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-5z"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16v-5a6 6 0 1 0-12 0v5l-1.5 2h15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
     // Wallet / account type glyphs used by the wallet cards.
     cash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg>',
     card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/></svg>',
@@ -1755,6 +1756,16 @@ function renderMore() {
             <button class="chip ${settings.pendingAffectsBalance ? 'on' : ''}" data-action="set-pending-behavior" data-value="count">Count as moved</button>
           </div>
         `)}
+        ${settingsRow('bell', 'Daily reminder', `
+          <p class="muted tight">Get a notification to record today's transactions.</p>
+          <div class="chip-row">
+            <button class="chip ${settings.reminderEnabled ? 'on' : ''}" data-action="set-reminder-enabled" data-value="on">On</button>
+            <button class="chip ${settings.reminderEnabled ? '' : 'on'}" data-action="set-reminder-enabled" data-value="off">Off</button>
+          </div>
+          <label class="muted tight" style="display:block;margin-top:8px">Time
+            <input type="time" data-action="set-reminder-time" value="${escapeHtml(settings.reminderTime || '20:00')}" />
+          </label>
+        `)}
       </div>
     </section>
 
@@ -2391,6 +2402,18 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
+  if (action === 'set-reminder-enabled') {
+    const enabled = actionEl.dataset.value === 'on'
+    store.setReminder(enabled, store.getSettings().reminderTime)
+    if (enabled && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(() => scheduleReminder())
+    else scheduleReminder()
+    toast(enabled ? 'Reminder on' : 'Reminder off'); render(); return
+  }
+  if (action === 'set-reminder-time') {
+    store.setReminder(store.getSettings().reminderEnabled, actionEl.value)
+    scheduleReminder()
+    return
+  }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
   if (action === 'wallet-color' || action === 'wallet-auto-color') {
     const row = actionEl.closest('.swatch-row')
@@ -2731,6 +2754,10 @@ document.addEventListener('submit', (event) => {
   const form = event.target.closest('[data-form]')
   if (!form) return
   event.preventDefault()
+  // A second submit on the same sheet must not run again — that is how the same
+  // transaction used to be written twice and charged the wallet twice.
+  if (form.dataset.saving === '1') return
+  form.dataset.saving = '1'
   const type = form.dataset.form
   const id = form.dataset.id
   const data = new FormData(form)
@@ -3002,6 +3029,28 @@ async function pickBackupLocation() {
   toast('Backup exported')
 }
 
+// Daily reminder to record transactions. While the app is open its timer fires
+// the notification at the chosen time and reschedules for the next day.
+function scheduleReminder() {
+  try {
+    if (!('Notification' in window)) return
+    const s = store.getSettings()
+    if (!s.reminderEnabled) return
+    if (Notification.permission !== 'granted') return
+    const [h, m] = String(s.reminderTime || '20:00').split(':').map(Number)
+    const now = new Date()
+    const target = new Date()
+    target.setHours(h, m, 0, 0)
+    if (target <= now) target.setDate(target.getDate() + 1)
+    const delay = target.getTime() - now.getTime()
+    if (window.__pcfReminder) clearTimeout(window.__pcfReminder)
+    window.__pcfReminder = setTimeout(() => {
+      try { new Notification('Personal Cash Flow', { body: 'Time to record today\'s transactions.', icon: './icon.svg' }) } catch {}
+      scheduleReminder()
+    }, delay)
+  } catch { /* reminders are best-effort */ }
+}
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !modal) {
     store.ensureRecurring()
@@ -3013,6 +3062,7 @@ document.addEventListener('visibilitychange', () => {
 
 applyTheme()
 render()
+scheduleReminder()
 
 ;(function autoRate() {
   const stamp = store.rateUpdatedAt()

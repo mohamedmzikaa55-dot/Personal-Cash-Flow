@@ -488,7 +488,9 @@ function defaultState() {
       exchangeRate: null,
       rateUpdatedAt: '',
       ratesUpdatedAt: '',
-      pendingAffectsBalance: false
+      pendingAffectsBalance: false,
+      reminderEnabled: false,
+      reminderTime: '20:00'
     },
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
@@ -528,7 +530,9 @@ function migrate(raw) {
     exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
     rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40),
     ratesUpdatedAt: str(raw.settings && raw.settings.ratesUpdatedAt, 40),
-    pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true
+    pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true,
+    reminderEnabled: raw.settings && raw.settings.reminderEnabled === true,
+    reminderTime: (raw.settings && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(raw.settings.reminderTime || ''))) ? raw.settings.reminderTime : '20:00'
   }
   // A saved single rate for the secondary currency becomes an entry in the map.
   const legacyCode = currencyCode(out.settings.secondaryCurrency)
@@ -557,6 +561,28 @@ function migrate(raw) {
   out.transfers = Array.isArray(raw.transfers) ? raw.transfers.map(normalizeTransfer) : []
   out.assets = Array.isArray(raw.assets) ? raw.assets.map(normalizeAsset) : []
   out.debts = Array.isArray(raw.debts) ? raw.debts.map(normalizeDebt) : []
+  // An old update path once let the same save run twice, which wrote the same
+  // record twice and made the wallet charge it again. Drop exact doubles —
+  // same kind, fields AND created within two seconds of each other — while
+  // keeping the earliest copy, so genuine quick re-entries stay untouched.
+  const dedupe = (list, keyFields) => {
+    const seen = new Map()
+    const kept = []
+    list.forEach((rec) => {
+      const key = keyFields.map((f) => String(rec[f] == null ? '' : rec[f])).join('|')
+      const prior = seen.get(key)
+      if (prior !== undefined) {
+        const gap = Math.abs(new Date(rec.createdAt || 0).getTime() - new Date(list[prior].createdAt || 0).getTime())
+        if (gap <= 2000) return
+      }
+      seen.set(key, kept.length)
+      kept.push(rec)
+    })
+    return kept
+  }
+  out.incomes = dedupe(out.incomes, ['name', 'amount', 'date', 'time', 'walletId', 'sourceId', 'pending', 'releasedDate'])
+  out.expenses = dedupe(out.expenses, ['name', 'amount', 'date', 'time', 'walletId', 'categoryId', 'pending', 'releasedDate'])
+  out.transfers = dedupe(out.transfers, ['amount', 'fee', 'date', 'time', 'fromId', 'toId', 'pending', 'releasedDate'])
   return out
 }
 
@@ -1489,6 +1515,11 @@ export const store = {
   },
   setPendingAffectsBalance(value) {
     state.settings.pendingAffectsBalance = value === true
+    save()
+  },
+  setReminder(enabled, time) {
+    state.settings.reminderEnabled = enabled === true
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || ''))) state.settings.reminderTime = time
     save()
   },
   recordCounts,
