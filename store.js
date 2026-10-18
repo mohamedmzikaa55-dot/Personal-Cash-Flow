@@ -488,9 +488,7 @@ function defaultState() {
       exchangeRate: null,
       rateUpdatedAt: '',
       ratesUpdatedAt: '',
-      pendingAffectsBalance: false,
-      reminderEnabled: false,
-      reminderTime: '20:00'
+      pendingAffectsBalance: false
     },
     wallets: DEFAULT_WALLETS.map(normalizeWallet),
     categories: DEFAULT_CATEGORIES.map(normalizeCategory),
@@ -530,9 +528,7 @@ function migrate(raw) {
     exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
     rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40),
     ratesUpdatedAt: str(raw.settings && raw.settings.ratesUpdatedAt, 40),
-    pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true,
-    reminderEnabled: raw.settings && raw.settings.reminderEnabled === true,
-    reminderTime: (raw.settings && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(raw.settings.reminderTime || ''))) ? raw.settings.reminderTime : '20:00'
+    pendingAffectsBalance: raw.settings && raw.settings.pendingAffectsBalance === true
   }
   // A saved single rate for the secondary currency becomes an entry in the map.
   const legacyCode = currencyCode(out.settings.secondaryCurrency)
@@ -1493,11 +1489,6 @@ export const store = {
   },
   setPendingAffectsBalance(value) {
     state.settings.pendingAffectsBalance = value === true
-    save()
-  },
-  setReminder(enabled, time) {
-    state.settings.reminderEnabled = enabled === true
-    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || ''))) state.settings.reminderTime = time
     save()
   },
   recordCounts,

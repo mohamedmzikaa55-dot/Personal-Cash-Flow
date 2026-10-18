@@ -1755,16 +1755,6 @@ function renderMore() {
             <button class="chip ${settings.pendingAffectsBalance ? 'on' : ''}" data-action="set-pending-behavior" data-value="count">Count as moved</button>
           </div>
         `)}
-        ${settingsRow('bell', 'Daily reminder', `
-          <p class="muted tight">Get a notification to record today's transactions.</p>
-          <div class="chip-row">
-            <button class="chip ${settings.reminderEnabled ? 'on' : ''}" data-action="set-reminder-enabled" data-value="on">On</button>
-            <button class="chip ${settings.reminderEnabled ? '' : 'on'}" data-action="set-reminder-enabled" data-value="off">Off</button>
-          </div>
-          <label class="muted tight" style="display:block;margin-top:8px">Time
-            <input type="time" data-action="set-reminder-time" value="${escapeHtml(settings.reminderTime || '20:00')}" />
-          </label>
-        `)}
       </div>
     </section>
 
@@ -2401,16 +2391,6 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'set-theme') { store.setTheme(store.getTheme() === 'light' ? 'dark' : 'light'); applyTheme(); render(); return }
   if (action === 'set-pending-behavior') { store.setPendingAffectsBalance(actionEl.dataset.value === 'count'); toast('Preference saved'); render(); return }
-  if (action === 'set-reminder-enabled') {
-    const enabled = actionEl.dataset.value === 'on'
-    store.setReminder(enabled, store.getSettings().reminderTime)
-    if (enabled && 'Notification' in window) Notification.requestPermission().then(() => scheduleReminder())
-    toast('Preference saved'); render(); return
-  }
-  if (action === 'set-reminder-time') {
-    store.setReminder(store.getSettings().reminderEnabled, actionEl.value)
-    scheduleReminder(); return
-  }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
   if (action === 'wallet-color' || action === 'wallet-auto-color') {
     const row = actionEl.closest('.swatch-row')
@@ -3029,31 +3009,10 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 
-function scheduleReminder() {
-  try {
-    if (!('Notification' in window)) return
-    const s = store.getSettings()
-    if (!s.reminderEnabled) return
-    if (Notification.permission !== 'granted') return
-    const [h, m] = String(s.reminderTime || '20:00').split(':').map(Number)
-    const now = new Date()
-    const target = new Date()
-    target.setHours(h, m, 0, 0)
-    if (target <= now) target.setDate(target.getDate() + 1)
-    const delay = target.getTime() - now.getTime()
-    if (window._reminderTimer) clearTimeout(window._reminderTimer)
-    window._reminderTimer = setTimeout(() => {
-      new Notification('Personal Cash Flow', { body: 'Time to record today\\'s transactions.', icon: './icon.svg' })
-      scheduleReminder()
-    }, delay)
-  } catch { /* ignore */ }
-}
-
 // ---------- boot ----------
 
 applyTheme()
 render()
-scheduleReminder()
 
 ;(function autoRate() {
   const stamp = store.rateUpdatedAt()
