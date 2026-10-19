@@ -586,8 +586,9 @@ function renderTrend() {
 
 function budgetBar(category) {
   const pct = category.budget > 0 ? Math.round((category.spent / category.budget) * 100) : 0
-  const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
-  const pctCls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
+  const state = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : ''
+  const over = category.budget > 0 && category.spent > category.budget
+  const displayPct = Math.min(999, pct)
   // The chosen icon, or the category's initial when none is set.
   const glyph = category.icon
     ? icon(category.icon)
@@ -595,12 +596,17 @@ function budgetBar(category) {
   return `
     <div class="budget-row">
       <div class="top">
-        <span><span class="cat-tile" style="background:${softColor(category.color)};color:${escapeHtml(category.color)}">${glyph}</span>${escapeHtml(category.name)}</span>
-        <span class="mono"><b>${money(category.spent)}</b> <span class="muted">/ ${money(category.budget)}</span></span>
-        <span class="pct ${pctCls}">${pct}%</span>
+        <span class="cat-name">
+          <span class="cat-tile" style="background:${softColor(category.color)};color:${escapeHtml(category.color)}">${glyph}</span>
+          <span class="cat-name-text">${escapeHtml(category.name)}</span>
+        </span>
+        <span class="pct ${state}">${displayPct}%</span>
       </div>
-      <div class="bar"><span class="${cls}" style="width:${Math.min(100, pct)}%"></span></div>
-      <div class="muted" style="font-size:11.5px">${pct}% used · ${money(Math.max(0, category.budget - category.spent))} left</div>
+      <div class="bar"><span class="${state}" style="width:${Math.min(100, pct)}%"></span></div>
+      <div class="split">
+        <span class="mono"><b>${money(category.spent)}</b><span class="muted"> / ${money(category.budget)}</span></span>
+        <span class="left ${over ? 'over' : ''}">${over ? `${money(category.spent - category.budget)} over` : `${money(Math.max(0, category.budget - category.spent))} left`}</span>
+      </div>
     </div>
   `
 }

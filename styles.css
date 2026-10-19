@@ -1952,7 +1952,16 @@ label,
   align-items: center;
   gap: 9px;
   min-width: 0;
+  flex: 1 1 auto;
   font-weight: 600;
+}
+
+/* Long category names shrink and ellipsis instead of squeezing the numbers. */
+.budget-row .cat-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .budget-row .top b {
@@ -1962,6 +1971,47 @@ label,
 .budget-row .top .mono {
   margin-left: auto;
   white-space: nowrap;
+}
+
+/* Percent pill: applied at the row's right edge, tinted by its state. */
+.budget-row .pct {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.budget-row .pct.warn {
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  color: var(--gold);
+}
+
+.budget-row .pct.over {
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--red);
+}
+
+/* Bottom line: spent / budget on the left, remaining (or over) on the right. */
+.budget-row .split {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.budget-row .split .left {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.budget-row .split .left.over {
+  color: var(--red);
 }
 
 /* Category colour tile used on budget rows. */
@@ -1979,21 +2029,6 @@ label,
 .cat-tile svg {
   width: 17px;
   height: 17px;
-}
-
-.budget-row .pct {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: var(--accent);
-  white-space: nowrap;
-}
-
-.budget-row .pct.warn {
-  color: var(--gold);
-}
-
-.budget-row .pct.over {
-  color: var(--red);
 }
 
 /* Settings blocks: icon tile beside the title, like the showcase's Settings. */
