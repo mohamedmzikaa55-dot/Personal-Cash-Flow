@@ -107,6 +107,20 @@ function money(value, withSign) {
   return store.formatMoney(value, withSign)
 }
 
+// Big totals rendered gallery-style: small currency symbol, tighter major
+// digits, smaller decimals — plus the count-up hooks (data-countup / data-from)
+// that the engine at the bottom of this file animates when the value appears
+// on screen or changes.
+function moneyPreview(value, countKey) {
+  const n = Number(value) || 0
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+  const major = Math.floor(abs).toLocaleString()
+  const decimal = abs.toFixed(2).slice(-2)
+  const symbol = escapeHtml(store.getSettings().currency || '$')
+  return `<span class="money-preview" data-countup="${n}" data-count-key="${escapeHtml(String(countKey))}" data-from="${counterTotals.get(countKey) ?? 0}" aria-label="${escapeHtml(money(n))}"><span class="currency">${sign}${symbol}</span><span class="major">${major}</span><span class="decimal">.${decimal}</span></span>`
+}
+
 // Plain number with no currency symbol — for amounts that already carry their
 // own currency code next to them (a wallet's second-currency balance).
 function plainMoney(value) {
@@ -360,7 +374,7 @@ function renderDashboard() {
       <div class="hero-top">
         <div>
           <span class="label">Total balance</span>
-          <div class="value mono">${money(totals.cash)}</div>
+          <div class="value mono">${moneyPreview(totals.cash, 'home-total')}</div>
           <div class="sub">${wallets.length} wallets · net worth ${money(totals.total)}</div>
         </div>
         <span class="pill ${summary.net >= 0 ? 'pos' : 'neg'}">${summary.net >= 0 ? '▲' : '▼'} ${money(summary.net)}</span>
@@ -368,11 +382,11 @@ function renderDashboard() {
       <div class="hero-tiles">
         <div class="tile income">
           <span class="tile-label">${icon('up')} Income</span>
-          <span class="tile-figure mono">${money(summary.income)}</span>
+          <span class="tile-figure mono">${moneyPreview(summary.income, 'home-income')}</span>
         </div>
         <div class="tile expense">
           <span class="tile-label">${icon('down')} Expense</span>
-          <span class="tile-figure mono">${money(summary.expense)}</span>
+          <span class="tile-figure mono">${moneyPreview(summary.expense, 'home-expense')}</span>
         </div>
         <div class="tile rate ${summary.net < 0 ? 'neg' : ''}">
           <span class="tile-label">Save rate</span>
@@ -953,15 +967,15 @@ function txSummaryHtml() {
     <div class="hero-tiles" style="margin-top:0">
       <div class="tile income">
         <span class="tile-label">${icon('up')} Income</span>
-        <span class="tile-figure mono">${money(income)}</span>
+        <span class="tile-figure mono">${moneyPreview(income, 'act-income')}</span>
       </div>
       <div class="tile expense">
         <span class="tile-label">${icon('down')} Expense</span>
-        <span class="tile-figure mono">${money(expense)}</span>
+        <span class="tile-figure mono">${moneyPreview(expense, 'act-expense')}</span>
       </div>
       <div class="tile">
         <span class="tile-label">Net</span>
-        <span class="tile-figure mono ${net >= 0 ? '' : 'neg'}">${money(net)}</span>
+        <span class="tile-figure mono ${net >= 0 ? '' : 'neg'}">${moneyPreview(net, 'act-net')}</span>
       </div>
     </div>
   `
@@ -1204,7 +1218,7 @@ function renderWallets() {
       <div class="hero-top">
         <div>
           <span class="label">Total balance</span>
-          <div class="value mono">${money(total)}</div>
+          <div class="value mono">${moneyPreview(total, 'wallets-total')}</div>
           <div class="sub">${wallets.length} wallet${wallets.length === 1 ? '' : 's'} · spendable ${money(wallets.reduce((sum, w) => sum + store.walletSpendable(w.id), 0))}</div>
         </div>
         <span class="pill ${total >= 0 ? 'pos' : 'neg'}">${total >= 0 ? '▲' : '▼'} ${money(total)}</span>
@@ -1284,7 +1298,7 @@ function renderWalletDetail() {
       <div class="hero-top">
         <div>
           <span class="label">Total in ${escapeHtml(store.getSettings().mainCurrency)}</span>
-          <div class="value mono" style="font-size:34px">${money(parts.total)}</div>
+          <div class="value mono" style="font-size:34px">${moneyPreview(parts.total, `wallet-${wallet.id}`)}</div>
           <div class="sub">Balance ${money(parts.balance)}${parts.allowable ? ` · allowable ${money(parts.allowable)}` : ''}${parts.foreign ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}${parts.converted === null ? ' (no rate)' : ` ≈ ${money(parts.converted)}`}` : ''}</div>
           <div class="sub" style="margin-top:4px">You can spend up to ${money(parts.spendable)} from this wallet</div>
         </div>
@@ -1619,7 +1633,7 @@ function renderBudgets() {
 
     <section class="hero" style="padding:16px">
       <span class="label">Spent this month</span>
-      <div class="value mono" style="font-size:30px">${money(spent)}</div>
+      <div class="value mono" style="font-size:30px">${moneyPreview(spent, 'budgets-spent')}</div>
       <div class="sub">of ${money(budget)} budgeted</div>
       <div class="progress-track"><div class="progress-fill" style="width:${budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0}%"></div></div>
     </section>
@@ -2305,6 +2319,7 @@ function render() {
     txSearch = event.target.value || ''
     patchTxView()
   })
+  mountCounters()
   // The wallet form recalculates its second-currency hint as it is filled in.
   const walletForm = document.querySelector('form[data-form="wallet"]')
   if (walletForm) {
@@ -3063,6 +3078,72 @@ document.addEventListener('visibilitychange', () => {
     render()
   }
 })
+
+// ---------- count-up animation on total numbers ----------
+// Total figures render through moneyPreview(): the final value is already in
+// the markup, and this plays the UI-gallery count-up when a total first
+// appears on screen — or counts from its previous number up (or down) to the
+// new one after a change. counterTotals remembers the last animated value per
+// key, so the frequent re-renders (every tap re-runs render()) don't replay
+// the animation for unchanged totals.
+const counterTotals = new Map()
+const COUNTER_REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+let counterIo = null
+
+function renderCounter(el, value) {
+  const major = el.querySelector('.major')
+  const decimal = el.querySelector('.decimal')
+  const abs = Math.abs(Number(value) || 0)
+  if (major) major.textContent = Math.floor(abs).toLocaleString()
+  if (decimal) decimal.textContent = '.' + abs.toFixed(2).slice(-2)
+}
+
+function animateCounter(el) {
+  const key = el.dataset.countKey
+  const to = Number(el.dataset.countup) || 0
+  const from = Number(el.dataset.from ?? 0) || 0
+  counterTotals.set(key, to)
+  if (COUNTER_REDUCE || from === to) { renderCounter(el, to); return }
+  el.classList.add('counting')
+  const duration = 1100
+  const start = performance.now()
+  function frame(now) {
+    const p = Math.min((now - start) / duration, 1)
+    const eased = 1 - Math.pow(1 - p, 3) // easeOutCubic, like the UI gallery
+    renderCounter(el, from + (to - from) * eased)
+    if (p < 1) requestAnimationFrame(frame)
+    else {
+      el.classList.remove('counting')
+      el.classList.add('counted')
+      renderCounter(el, to)
+    }
+  }
+  requestAnimationFrame(frame)
+}
+
+function mountCounters() {
+  if (!app) return
+  const els = app.querySelectorAll('[data-countup]')
+  if (!els.length) return
+  if (COUNTER_REDUCE || !('IntersectionObserver' in window)) {
+    els.forEach((el) => counterTotals.set(el.dataset.countKey, Number(el.dataset.countup) || 0))
+    return
+  }
+  if (!counterIo) {
+    counterIo = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          counterIo.unobserve(entry.target)
+          animateCounter(entry.target)
+        }
+      })
+    }, { threshold: 0.4 })
+  }
+  els.forEach((el) => {
+    if (counterTotals.get(el.dataset.countKey) === (Number(el.dataset.countup) || 0)) return
+    counterIo.observe(el)
+  })
+}
 
 // ---------- boot ----------
 

@@ -709,6 +709,56 @@ h2 svg {
   overflow-wrap: anywhere;
 }
 
+/* ---------- count-up money (from the UI gallery) ---------- */
+/* Big totals render as .money-preview: small currency symbol, tight major
+   digits, smaller muted decimals — the same typographic split as the gallery
+   hero balances. */
+.money-preview {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.money-preview .currency {
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: 0.62em;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.money-preview .major {
+  letter-spacing: -0.055em;
+}
+
+.money-preview .decimal {
+  color: var(--muted);
+  font-size: 0.56em;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+/* While the total is counting the digits glow toward the accent colour,
+   blended with the element's own colour so a red expense tile stays red. */
+.money-preview.counting .major {
+  color: color-mix(in srgb, currentColor 72%, var(--accent) 28%);
+}
+
+.money-preview.counted {
+  animation: count-land 0.45s ease;
+}
+
+@keyframes count-land {
+  0% { text-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { text-shadow: 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .money-preview.counted { animation: none; }
+}
+
 .hero .sub {
   color: var(--muted);
   font-size: 12.5px;
