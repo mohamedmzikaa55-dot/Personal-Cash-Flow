@@ -952,6 +952,8 @@ function walletFilterOptions() {
 }
 
 // Period label + income / expense / net for whatever the list currently shows.
+// Records sitting in excluded wallets are still listed below, but they are
+// left out of the figures — the wallet opted out of every total.
 function txSummaryHtml() {
   const range = periodRange(txPeriod)
   const inPeriod = store.getTransactions().filter((t) => {
@@ -959,14 +961,16 @@ function txSummaryHtml() {
     return d >= range.from && d <= range.to
   })
   const list = visibleTransactions()
-  const income = list.filter((t) => t.kind === 'income').reduce((s, t) => s + t.amount, 0)
-  const expense = list.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount, 0)
+  const counted = (t) => !store.walletExcluded(t)
+  const income = list.filter((t) => t.kind === 'income' && counted(t)).reduce((s, t) => s + t.amount, 0)
+  const expense = list.filter((t) => t.kind === 'expense' && counted(t)).reduce((s, t) => s + t.amount, 0)
   const net = income - expense
+  const excludedCount = inPeriod.filter((t) => (t.kind === 'income' || t.kind === 'expense') && !counted(t)).length
   const count = list.length === inPeriod.length
     ? `${inPeriod.length} transaction${inPeriod.length === 1 ? '' : 's'}`
     : `${list.length} of ${inPeriod.length} transactions`
   return `
-    <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${count}</p>
+    <p class="muted tight" style="margin-bottom:8px">${escapeHtml(periodTitle(txPeriod, range))} · ${count}${excludedCount ? ` · ${excludedCount} in excluded wallets not counted` : ''}</p>
     <div class="hero-tiles" style="margin-top:0">
       <div class="tile income">
         <span class="tile-label">${icon('up')} Income</span>
@@ -1411,6 +1415,7 @@ function breakdownTotals(kind, period) {
   const totals = new Map()
   store.getTransactions().forEach((t) => {
     if (t.kind !== wanted) return
+    if (store.walletExcluded(t)) return
     const d = t.effDate || t.date
     if (d < from || d > to) return
     const key = wanted === 'expense' ? (t.categoryId || '') : (t.sourceId || '')
@@ -1537,7 +1542,8 @@ function budgetCalLabel(key) {
 // Everything the calendar and the statistics cards need for one month: the
 // transactions, per-day totals, and the derived averages / extremes.
 function budgetMonthStats(key) {
-  const list = store.getTransactions().filter((t) => store.monthKey(t.effDate || t.date) === key)
+  // Excluded wallets are left out of the calendar and its averages too.
+  const list = store.getTransactions().filter((t) => store.monthKey(t.effDate || t.date) === key && !store.walletExcluded(t))
   const dayTotals = new Map()
   const catTotals = new Map()
   let income = 0

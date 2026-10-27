@@ -130,6 +130,14 @@ function recordCounts(record) {
   return !record.pending || state.settings.pendingAffectsBalance === true
 }
 
+// An excluded wallet keeps its money out of the total balance, so records in
+// it count for nothing in the global income / expense / category totals either.
+// They still live in the wallet's own history and in the Activity list.
+function walletExcluded(record) {
+  const wallet = state.wallets.find((w) => w.id === record.walletId)
+  return Boolean(wallet && wallet.excluded)
+}
+
 // A skipped occurrence of a recurring series is kept for the calendar but does
 // not count towards balances, totals or activity.
 function isActive(record) {
@@ -920,8 +928,8 @@ function walletTotals() {
 function monthItems(month) {
   const inMonth = (date) => monthKey(date) === month
   return {
-    incomes: state.incomes.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r)),
-    expenses: state.expenses.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r)),
+    incomes: state.incomes.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r) && !walletExcluded(r)),
+    expenses: state.expenses.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && isActive(r) && recordCounts(r) && !walletExcluded(r)),
     transfers: state.transfers.filter((r) => inMonth(effectiveDate(r)) && isDue(r) && recordCounts(r))
   }
 }
@@ -938,7 +946,7 @@ function monthSummary(month) {
 function categoryTotals(month) {
   const totals = {}
   state.expenses.forEach((r) => {
-    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r) || walletExcluded(r)) return
     totals[r.categoryId] = (totals[r.categoryId] || 0) + r.amount
   })
   return totals
@@ -947,7 +955,7 @@ function categoryTotals(month) {
 function sourceTotals(month) {
   const totals = {}
   state.incomes.forEach((r) => {
-    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r) || walletExcluded(r)) return
     totals[r.sourceId] = (totals[r.sourceId] || 0) + r.amount
   })
   return totals
@@ -958,7 +966,7 @@ function sourceTotals(month) {
 // Expenses that fall inside a goal's scope during `month`.
 function goalExpenses(goal, month) {
   return state.expenses.filter((r) => {
-    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r)) return false
+    if (monthKey(effectiveDate(r)) !== month || !isDue(r) || !isActive(r) || !recordCounts(r) || walletExcluded(r)) return false
     if (goal.walletId && r.walletId !== goal.walletId) return false
     if (goal.categoryId && r.categoryId !== goal.categoryId) return false
     return true
@@ -991,6 +999,8 @@ function goalScopeText(goal) {
 function goalsHitByExpense(fields, excludeTxId) {
   const amount = Math.abs(parseMoney(fields && fields.amount))
   if (!amount) return []
+  // Spending from an excluded wallet counts towards no goal.
+  if (walletExcluded(fields)) return []
   const start = isValidISO(fields && fields.date) ? fields.date : todayISO()
   // Editing an existing record only re-checks its own date; a brand new
   // recurring series is checked for every generated occurrence.
@@ -1535,6 +1545,7 @@ export const store = {
     save()
   },
   recordCounts,
+  walletExcluded,
 
   // Wallets
   getWallets() {
@@ -1901,8 +1912,8 @@ export const store = {
     for (let i = count - 1; i >= 0; i -= 1) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const income = state.incomes.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r)).reduce((s, r) => s + r.amount, 0)
-      const expense = state.expenses.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r)).reduce((s, r) => s + r.amount, 0)
+      const income = state.incomes.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r) && !walletExcluded(r)).reduce((s, r) => s + r.amount, 0)
+      const expense = state.expenses.filter((r) => monthKey(effectiveDate(r)) === key && isDue(r) && isActive(r) && recordCounts(r) && !walletExcluded(r)).reduce((s, r) => s + r.amount, 0)
       out.push({ month: key, label: d.toLocaleDateString(undefined, { month: 'short' }), income, expense, net: income - expense })
     }
     return out
