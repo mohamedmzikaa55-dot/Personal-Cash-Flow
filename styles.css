@@ -2458,6 +2458,98 @@ label,
   }
 }
 
+/* ---------- debt person groups (Activity tab) ---------- */
+.debt-group {
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm), var(--lift);
+  overflow: hidden;
+  transition: border-color 0.18s ease;
+}
+
+.debt-group.open {
+  border-color: var(--line-strong);
+}
+
+.debt-group-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 13px 14px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.debt-group-head:active {
+  background: var(--press);
+}
+
+.debt-group-head .avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-shadow: var(--lift);
+}
+
+.debt-group-head .avatar svg {
+  width: 21px;
+  height: 21px;
+}
+
+.debt-group-head .body {
+  min-width: 0;
+}
+
+.debt-group-head .title {
+  font-weight: 600;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.debt-group-head .meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.debt-group-chev {
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s ease;
+}
+
+.debt-group-chev svg {
+  width: 16px;
+  height: 16px;
+}
+
+.debt-group.open .debt-group-chev {
+  transform: rotate(90deg);
+}
+
+.debt-group-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.debt-group-body .item {
+  box-shadow: none;
+}
+
 /* Shown by the boot watchdog in index.html when the app module never renders,
    so a failed load is a clear message instead of a blank screen. */
 #boot-error {

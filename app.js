@@ -28,6 +28,8 @@ let calSelected = null
 // breakdown charts' period so browsing days never changes the donut.
 let budgetCal = null
 let budgetCalDay = null
+// Activity tab: which debt-person groups are expanded (collapsed by default).
+let debtOpenPeople = new Set()
 
 // ---------- overlay history ----------
 // Every modal / drill-down pushes a history entry so the Android back button,
@@ -553,6 +555,7 @@ function walletsTotalsLine(totals) {
       : `${label} ${plainMoney(c.amount)} (no rate)`)
   })
   if (totals.unrated) bits.push(`${totals.unrated} wallet${totals.unrated === 1 ? '' : 's'} not converted — set the rate in Settings`)
+  if (totals.excludedCount) bits.push(`${totals.excludedCount} wallet${totals.excludedCount === 1 ? '' : 's'} excluded (${money(totals.excluded)})`)
   return `<p class="sub" style="margin-top:4px">Wallets: ${bits.join(' · ')}</p>`
 }
 
@@ -563,7 +566,7 @@ function walletRow(wallet) {
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
-        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${escapeHtml(wallet.type)}${parts.foreign && parts.currency ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}` : ''}</div>
+        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${wallet.excluded ? '<span class="badge">Excluded</span>' : ''}${escapeHtml(wallet.type)}${parts.foreign && parts.currency ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}` : ''}</div>
         <div class="meta">${walletBreakdownText(parts)}</div>
       </div>
       <div class="amount ${parts.total < 0 ? 'neg' : ''} mono">${money(parts.total)}</div>
@@ -1066,7 +1069,10 @@ function renderTransactions() {
 
 // Debt transactions get their own section on the Activity tab: a Lent can be
 // collected, a Borrow returned, and a fully settled record is marked Done so it
-// no longer offers an action.
+// no longer offers an action. The records are grouped into one card per person
+// that the user can collapse and expand; groups keep date order (the newest
+// record of each person decides where it sits) and people are matched without
+// regard to case or extra spaces, so "Ali" and "ali " land on one card.
 function debtSectionHtml() {
   const debts = store.getDebts()
   const summary = store.debtSummary()
@@ -1077,6 +1083,7 @@ function debtSectionHtml() {
       ? `Borrowed ${money(summary.borrowed)} · returned ${money(summary.returned)} · to return ${money(summary.payable)}`
       : ''
   ].filter(Boolean)
+  const groups = debtGroupsByPerson(debts)
   return `
     <section class="section" style="margin-top:18px">
       <div class="section-head">
@@ -1085,9 +1092,60 @@ function debtSectionHtml() {
       </div>
       <p class="muted tight" style="margin-bottom:10px">${open} still open · ${parts.join(' · ')}</p>
       <div class="list">
-        ${debts.length ? debts.map(debtTxRow).join('') : emptyState('No debt transactions yet.', 'inbox')}
+        ${groups.length ? groups.map(debtGroupCard).join('') : emptyState('No debt transactions yet.', 'inbox')}
       </div>
     </section>
+  `
+}
+
+// Fold the debt records into one group per person, in first-appearance order.
+function debtGroupsByPerson(debts) {
+  const byPerson = new Map()
+  debts.forEach((d) => {
+    const person = d.person || 'Someone'
+    const key = person.trim().toLowerCase() || 'someone'
+    if (!byPerson.has(key)) {
+      byPerson.set(key, { key, person, rows: [], lent: 0, collected: 0, borrowed: 0, returned: 0 })
+    }
+    const group = byPerson.get(key)
+    group.rows.push(d)
+    if (d.direction === 'Lent') group.lent += d.amount
+    else if (d.direction === 'Collect') group.collected += d.amount
+    else if (d.direction === 'Borrow') group.borrowed += d.amount
+    else if (d.direction === 'Return') group.returned += d.amount
+  })
+  return [...byPerson.values()].map((g) => ({
+    ...g,
+    receivable: roundMoney(Math.max(0, g.lent - g.collected)),
+    payable: roundMoney(Math.max(0, g.borrowed - g.returned))
+  }))
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100
+}
+
+// One person card: a header with the running balance, and the person's debt
+// records underneath when it is expanded.
+function debtGroupCard(group) {
+  const isOpen = debtOpenPeople.has(group.key)
+  const summaryBits = [
+    group.receivable > 0 ? `owes you ${money(group.receivable)}` : '',
+    group.payable > 0 ? `you owe ${money(group.payable)}` : '',
+    `${group.rows.length} record${group.rows.length === 1 ? '' : 's'}`
+  ].filter(Boolean).join(' · ')
+  return `
+    <div class="debt-group ${isOpen ? 'open' : ''}">
+      <button type="button" class="debt-group-head" data-action="toggle-debt-person" data-person="${escapeHtml(group.key)}" aria-expanded="${isOpen}">
+        <span class="avatar debt">${icon('person')}</span>
+        <div class="body">
+          <div class="title">${escapeHtml(group.person)}</div>
+          <div class="meta">${summaryBits || 'No records'}</div>
+        </div>
+        <span class="debt-group-chev" aria-hidden="true">${icon('right')}</span>
+      </button>
+      ${isOpen ? `<div class="debt-group-body">${group.rows.map(debtTxRow).join('')}</div>` : ''}
+    </div>
   `
 }
 
@@ -1202,7 +1260,9 @@ function renderGoalsCompact() {
 
 function renderWallets() {
   const wallets = store.getWallets()
-  const total = wallets.reduce((sum, w) => sum + store.walletTotal(w.id), 0)
+  // Excluded wallets are listed as usual but stay out of the total balance.
+  const counted = wallets.filter((w) => !w.excluded)
+  const total = counted.reduce((sum, w) => sum + store.walletTotal(w.id), 0)
   const totals = store.walletTotals()
   return `
     <div class="topbar">
@@ -1219,7 +1279,7 @@ function renderWallets() {
         <div>
           <span class="label">Total balance</span>
           <div class="value mono">${moneyPreview(total, 'wallets-total')}</div>
-          <div class="sub">${wallets.length} wallet${wallets.length === 1 ? '' : 's'} · spendable ${money(wallets.reduce((sum, w) => sum + store.walletSpendable(w.id), 0))}</div>
+          <div class="sub">${counted.length} of ${wallets.length} wallet${wallets.length === 1 ? '' : 's'} · spendable ${money(counted.reduce((sum, w) => sum + store.walletSpendable(w.id), 0))}</div>
         </div>
         <span class="pill ${total >= 0 ? 'pos' : 'neg'}">${total >= 0 ? '▲' : '▼'} ${money(total)}</span>
       </div>
@@ -1251,6 +1311,7 @@ function walletDetailRow(wallet, index, total) {
         <div class="wallet-name">${escapeHtml(wallet.name)}</div>
         <div class="wallet-kind">
           <span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>
+          ${wallet.excluded ? '<span class="badge">Excluded</span>' : ''}
           <span>${escapeHtml(wallet.type)}</span>
           ${note.length ? `<span>· ${note.join(' · ')}</span>` : ''}
         </div>
@@ -1304,6 +1365,7 @@ function renderWalletDetail() {
         </div>
         <span class="pill ${wallet.status === 'Freezed' ? 'neg' : 'pos'}">${wallet.status}</span>
       </div>
+      ${wallet.excluded ? `<p class="sub" style="margin-top:8px">${icon('warn')} Excluded from the total balance — this wallet's money is not counted in it.</p>` : ''}
       <div class="stat-grid">
         <div class="stat"><span class="muted">Income</span><b class="pos mono">${money(income)}</b></div>
         <div class="stat"><span class="muted">Expense</span><b class="neg mono">${money(expense)}</b></div>
@@ -2021,6 +2083,11 @@ function renderModal() {
         </select></label>
       </div>
       <p class="muted tight" id="wallet-foreign-hint" style="margin-top:-4px">${walletForeignHint(w)}</p>
+      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="excluded" ${w.excluded ? 'checked' : ''} style="width:auto" />
+        <span>Exclude from total balance</span>
+      </label>
+      <p class="muted tight" style="margin-top:-4px">This wallet and everything in it stays out of the total balance, spendable and net worth — its own balance is still tracked here.</p>
       <div class="seg-field">
         <span class="seg-label">Tile colour</span>
         <div class="swatch-row">
@@ -2409,6 +2476,13 @@ document.addEventListener('click', (event) => {
   if (action === 'month-next') { shiftMonth(monthStep()); render(); return }
   if (action === 'month-now') { month = store.monthKey(store.todayISO()); render(); return }
   if (action === 'toggle-budget-edit') { budgetEdit = !budgetEdit; render(); return }
+  if (action === 'toggle-debt-person') {
+    const key = actionEl.dataset.person || ''
+    if (debtOpenPeople.has(key)) debtOpenPeople.delete(key)
+    else debtOpenPeople.add(key)
+    render()
+    return
+  }
   if (action === 'set-filter') { txFilter = actionEl.dataset.filter; render(); return }
   if (action === 'set-period') { txPeriod = actionEl.dataset.period || 'month'; render(); return }
   if (action === 'clear-search') { txSearch = ''; render(); return }
@@ -2796,7 +2870,7 @@ document.addEventListener('submit', (event) => {
   }
 
   if (type === 'wallet') {
-    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency'), color: get('color'), icon: get('icon') }
+    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency'), color: get('color'), icon: get('icon'), excluded: data.get('excluded') === 'on' }
     if (!fields.name) return
     if (id) store.updateWallet(id, fields)
     else store.addWallet(fields)

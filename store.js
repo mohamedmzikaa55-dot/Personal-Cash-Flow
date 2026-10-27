@@ -274,6 +274,9 @@ function normalizeWallet(wallet) {
     // wallet's name, the glyph from its type.
     color: hexColor(wallet.color),
     icon: WALLET_ICONS.includes(str(wallet.icon, 20)) ? str(wallet.icon, 20) : '',
+    // Kept out of the total balance when excluded: the wallet still tracks its
+    // own balance and history, the totals just ignore it.
+    excluded: wallet.excluded === true,
     note: str(wallet.note, 200)
   }
 }
@@ -872,11 +875,18 @@ function walletSpendableExcluding(id, amount) {
 }
 
 // Per-wallet parts of the total, so screens can show what it is made of and
-// warn when a second-currency balance cannot be converted.
+// warn when a second-currency balance cannot be converted. Wallets marked
+// excluded stay out of every piece — they are summed separately so screens can
+// still say how much money is being left out.
 function walletTotals() {
-  const acc = { main: 0, allowable: 0, foreign: 0, unrated: 0, currencies: [] }
+  const acc = { main: 0, allowable: 0, foreign: 0, unrated: 0, currencies: [], excluded: 0, excludedCount: 0 }
   const seen = {}
   state.wallets.forEach((w) => {
+    if (w.excluded) {
+      acc.excluded += walletTotal(w.id)
+      acc.excludedCount += 1
+      return
+    }
     acc.main += walletBalance(w.id)
     acc.allowable += Math.max(0, parseMoney(w.allowable))
     const code = currencyCode(w.currency)
@@ -901,7 +911,9 @@ function walletTotals() {
     allowable: round2(acc.allowable),
     foreign: round2(acc.foreign),
     unrated: acc.unrated,
-    currencies: acc.currencies
+    currencies: acc.currencies,
+    excluded: round2(acc.excluded),
+    excludedCount: acc.excludedCount
   }
 }
 
@@ -1880,7 +1892,7 @@ export const store = {
   sourceTotals,
   netWorth,
   totalCash() {
-    return state.wallets.reduce((sum, w) => sum + walletBalance(w.id), 0)
+    return state.wallets.filter((w) => !w.excluded).reduce((sum, w) => sum + walletBalance(w.id), 0)
   },
   // Last `count` months ending with the current month (oldest first).
   monthlyTrend(count = 6) {
