@@ -2182,7 +2182,7 @@ function calcModalHtml() {
     ['7', 'calc-key', 'calc-key'], ['8', 'calc-key', 'calc-key'], ['9', 'calc-key', 'calc-key'], ['×', 'calc-key', 'calc-key op'],
     ['4', 'calc-key', 'calc-key'], ['5', 'calc-key', 'calc-key'], ['6', 'calc-key', 'calc-key'], ['-', 'calc-key', 'calc-key op'],
     ['1', 'calc-key', 'calc-key'], ['2', 'calc-key', 'calc-key'], ['3', 'calc-key', 'calc-key'], ['+', 'calc-key', 'calc-key op'],
-    ['0', 'calc-key', 'calc-key'], ['.', 'calc-key', 'calc-key'], ['=', 'calc-add', 'calc-key equals']
+    ['0', 'calc-key', 'calc-key'], ['.', 'calc-key', 'calc-key'], ['=', 'calc-key', 'calc-key equals']
   ]
   const grid = keys.map(([k, action, cls]) => `<button type="button" class="${cls}" data-action="${action}" data-key="${k}" aria-label="${action === 'calc-clear' ? 'Clear' : action === 'calc-add' ? 'Add result' : k}">${k === '⌫' ? '⌫' : k === '±' ? '±' : k}</button>`).join('')
   const display = calcDisplayText()
