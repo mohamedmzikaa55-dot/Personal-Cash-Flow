@@ -89,10 +89,43 @@ window.addEventListener('popstate', () => {
     suppressPop = false
     return
   }
+  // The calculator is the top overlay: the back navigation that opened this pop
+  // is its dismissal, so just bring the sheet underneath it back.
+  if (modal === 'calc') {
+    const returnTo = calcReturn
+    calcReturn = null
+    pushedOverlays = Math.max(0, pushedOverlays - 1)
+    modal = null
+    modalPayload = null
+    const restore = returnTo
+    if (restore) { modal = restore.modal; modalPayload = restore.payload }
+    render()
+    return
+  }
   if (closeTopOverlay()) {
     pushedOverlays = Math.max(0, pushedOverlays - 1)
     render()
   }
+})
+
+// Keep the open sheet's focused field visible above the on-screen keyboard:
+// when a field gains focus the sheet scrolls just enough to bring it above the
+// middle (and down again once it leaves), so the top title and the Cancel /
+// Save actions stay reachable while the keyboard is open.
+document.addEventListener('focusin', (event) => {
+  const field = event.target
+  const sheet = field && field.closest ? field.closest('.sheet') : null
+  if (!sheet) return
+  const rect = field.getBoundingClientRect()
+  const box = sheet.getBoundingClientRect()
+  const top = sheet.scrollTop
+  const visibleTop = rect.top - box.top + top
+  const visibleBottom = visibleTop + (rect.height || 46)
+  const margin = 12
+  let target = top
+  if (visibleTop < top + margin) target = Math.max(0, visibleTop - margin)
+  else if (visibleBottom > top + sheet.clientHeight - margin) target = visibleBottom - sheet.clientHeight + margin
+  if (Math.abs(sheet.scrollTop - target) > 0.5) sheet.scrollTo({ top: target })
 })
 
 // ---------- tiny helpers ----------
@@ -231,6 +264,7 @@ function icon(name) {
     chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V5M16 20v-7M22 20H2"/></svg>',
     more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    calc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7.5h7M8.5 12h7M8.5 16.5h4"/></svg>',
     edit: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>',
     up: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -2011,10 +2045,174 @@ function scheduleModalHtml() {
   `
 }
 
+// ---------- calculator ----------
+
+// The simple in-sheet calculator used next to the amount fields: add, subtract,
+// multiply, divide, clear, negate and backspace. Enough for quick "split this"
+// or "how much did I spend" sums without leaving the app.
+let calc = { current: '0', acc: null, op: null, fresh: true, expr: '' }
+
+function calcReset() {
+  calc.current = '0'
+  calc.acc = null
+  calc.op = null
+  calc.fresh = true
+  calc.expr = ''
+}
+
+function calcRound(n) {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+function calcApply(a, b, op) {
+  const x = Number(a) || 0
+  const y = Number(b) || 0
+  if (op === '+') return x + y
+  if (op === '-') return x - y
+  if (op === '×') return x * y
+  if (op === '÷') return y === 0 ? 0 : x / y
+  return y
+}
+
+function calcValue() {
+  const n = Number(parseFloat(calc.current))
+  return Number.isFinite(n) ? n : 0
+}
+
+function calcDisplayText() {
+  const head = (calc.op && calc.acc !== null) ? `${calcRound(calc.acc)} ${calc.op}` : (calc.expr || '')
+  const shown = calcRound(Number(parseFloat(calc.current)) || 0)
+  return { head, value: String(Math.round(shown * 100) / 100) }
+}
+
+function calcRenderDisplay() {
+  const valueEl = document.getElementById('calc-value')
+  const exprEl = document.getElementById('calc-expr')
+  if (valueEl) valueEl.textContent = calcDisplayText().value
+  if (exprEl) exprEl.textContent = calcDisplayText().head || '\u00A0'
+}
+
+function calcPress(key) {
+  if (key === 'C') { calcReset(); calcRenderDisplay(); return }
+  if (key === '⌫') {
+    if (calc.fresh) return
+    const next = String(calc.current).slice(0, -1)
+    calc.current = next || '0'
+    if (calc.current === '0') calc.fresh = true
+    calcRenderDisplay()
+    return
+  }
+  if (key === '±') { calc.current = String(-Math.abs(Number(parseFloat(calc.current)) || 0)); calcRenderDisplay(); return }
+  if (key === '+' || key === '-' || key === '×' || key === '÷') {
+    const input = Number(parseFloat(calc.current)) || 0
+    if (calc.op && calc.acc !== null && !calc.fresh) {
+      const result = calcRound(calcApply(calc.acc, input, calc.op))
+      calc.acc = result
+      calc.current = String(result)
+    } else {
+      calc.acc = input
+    }
+    calc.op = key
+    calc.fresh = true
+    calc.expr = `${calcRound(calc.acc)} ${key}`
+    calcRenderDisplay()
+    return
+  }
+  if (key === '=') {
+    if (calc.op && calc.acc !== null) {
+      const result = calcRound(calcApply(calc.acc, Number(parseFloat(calc.current)) || 0, calc.op))
+      calc.expr = `${calcRound(calc.acc)} ${calc.op} ${calcRound(Number(parseFloat(calc.current)) || 0)} =`
+      calc.current = String(result)
+      calc.acc = null
+      calc.op = null
+      calc.fresh = true
+    }
+    calcRenderDisplay()
+    return
+  }
+  if (key === '.') {
+    if (calc.fresh) { calc.current = '0.'; calc.fresh = false }
+    else if (!String(calc.current).includes('.')) calc.current = `${calc.current}.`
+    calcRenderDisplay()
+    return
+  }
+  if (calc.fresh) { calc.current = key; calc.fresh = false }
+  else if (String(calc.current).replace(/[-.]/g, '').length < 12) calc.current += key
+  calcRenderDisplay()
+}
+
+// The calculator lives on top of the sheet that opened it (the transaction
+// form), so it pushes its own overlay and hands the amount back through here.
+let calcReturn = null
+
+function calcOpen() {
+  calcReset()
+  calcReturn = { modal: modal, payload: modalPayload }
+  modal = 'calc'
+  pushOverlay()
+  render()
+}
+
+// Close the calculator. When a value is passed the amount field of the sheet we
+// came from (income / expense / transfer / debt) is filled in and focused.
+function calcClose(value) {
+  const returnTo = calcReturn
+  calcReturn = null
+  modal = null
+  modalPayload = null
+  pushedOverlays = Math.max(0, pushedOverlays - 1)
+  suppressPop = true
+  try { history.back() } catch { suppressPop = false }
+  const restore = returnTo
+  if (restore) { modal = restore.modal; modalPayload = restore.payload }
+  render()
+  if (value !== undefined && Number.isFinite(value)) {
+    const form = document.querySelector(`form[data-form="${modal || ''}"]`)
+    const input = form ? form.querySelector('input[name="amount"]') : null
+    if (input) {
+      input.value = String(value)
+      input.focus()
+    }
+  }
+}
+
+function calcModalHtml() {
+  const keys = [
+    ['C', 'calc-clear', 'calc-key util'], ['⌫', 'calc-key', 'calc-key util'], ['±', 'calc-key', 'calc-key util'], ['÷', 'calc-key', 'calc-key op'],
+    ['7', 'calc-key', 'calc-key'], ['8', 'calc-key', 'calc-key'], ['9', 'calc-key', 'calc-key'], ['×', 'calc-key', 'calc-key op'],
+    ['4', 'calc-key', 'calc-key'], ['5', 'calc-key', 'calc-key'], ['6', 'calc-key', 'calc-key'], ['-', 'calc-key', 'calc-key op'],
+    ['1', 'calc-key', 'calc-key'], ['2', 'calc-key', 'calc-key'], ['3', 'calc-key', 'calc-key'], ['+', 'calc-key', 'calc-key op'],
+    ['0', 'calc-key', 'calc-key'], ['.', 'calc-key', 'calc-key'], ['=', 'calc-add', 'calc-key equals']
+  ]
+  const grid = keys.map(([k, action, cls]) => `<button type="button" class="${cls}" data-action="${action}" data-key="${k}" aria-label="${action === 'calc-clear' ? 'Clear' : action === 'calc-add' ? 'Add result' : k}">${k === '⌫' ? '⌫' : k === '±' ? '±' : k}</button>`).join('')
+  const display = calcDisplayText()
+  return `
+    <div class="modal-backdrop" data-action="close-calc">
+      <div class="sheet">
+        <div class="handle"></div>
+        <h2>Calculator</h2>
+        <div class="calc">
+          <div class="calc-display">
+            <div class="calc-expr" id="calc-expr">${escapeHtml(display.head || '\u00A0')}</div>
+            <div class="calc-value mono" id="calc-value">${escapeHtml(display.value)}</div>
+          </div>
+          <div class="calc-grid">${grid}</div>
+          <div class="form-actions">
+            <button class="ghost-btn" type="button" data-action="calc-cancel">Cancel</button>
+            <button class="primary-btn" type="button" data-action="calc-add">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 // ---------- modal ----------
 
 function renderModal() {
   if (!modal) return ''
+
+  if (modal === 'calc') return calcModalHtml()
 
   if (modal === 'schedule') return scheduleModalHtml()
 
@@ -2172,7 +2370,12 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Salary, refund…" /></label>
       <div class="row2">
-        <label>Amount<input name="amount" type="number" step="0.01" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" /></label>
+        <label>Amount
+          <span class="amount-field">
+            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
+            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
+          </span>
+        </label>
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
       <div class="row2">
@@ -2215,7 +2418,12 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Groceries, rent…" /></label>
       <div class="row2">
-        <label>Amount<input name="amount" type="number" step="0.01" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" /></label>
+        <label>Amount
+          <span class="amount-field">
+            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
+            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
+          </span>
+        </label>
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
       <div class="row2">
@@ -2256,7 +2464,12 @@ function renderModal() {
     title = `${isEdit ? 'Edit' : 'New'} transfer`
     body = `
       <div class="row2">
-        <label>Amount<input name="amount" type="number" step="0.01" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" /></label>
+        <label>Amount
+          <span class="amount-field">
+            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
+            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
+          </span>
+        </label>
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
       <div class="row2">
@@ -2298,7 +2511,12 @@ function renderModal() {
         <label>Number<input name="number" maxlength="40" value="${escapeHtml(d.number || '')}" placeholder="Phone or reference" /></label>
       </div>
       <div class="row2">
-        <label>Amount<input name="amount" type="number" step="0.01" required value="${d.amount ? Number(d.amount) : ''}" placeholder="0.00" /></label>
+        <label>Amount
+          <span class="amount-field">
+            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${d.amount ? Number(d.amount) : ''}" placeholder="0.00" />
+            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
+          </span>
+        </label>
         <label>Type<select name="direction" data-debt-direction>
           ${Object.keys(DEBT_TYPES).map((key) => `<option value="${key}" ${key === direction ? 'selected' : ''}>${key}</option>`).join('')}
         </select></label>
@@ -2652,6 +2870,12 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'open-choose') { openModal('choose', null); return }
   if (action === 'open-wallet-new') { openModal('wallet', {}, fromChoose); return }
+  if (action === 'open-calc') { calcOpen(); return }
+  if (action === 'close-calc') { calcClose(); return }
+  if (action === 'calc-cancel') { calcClose(); return }
+  if (action === 'calc-add') { const value = calcValue(); if (Number.isFinite(value) && value !== 0) calcClose(value); return }
+  if (action === 'calc-clear') { calcReset(); calcRenderDisplay(); return }
+  if (action === 'calc-key') { calcPress(actionEl.dataset.key); return }
 
   if (action === 'edit-transaction') {
     const kind = actionEl.dataset.kind

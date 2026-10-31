@@ -1754,6 +1754,94 @@ textarea::placeholder {
   gap: 10px;
 }
 
+/* Amount input with the calculator shortcut on its right. */
+.amount-field {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.amount-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.amount-field .icon-btn {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  border-radius: 13px;
+}
+
+/* ---------- calculator sheet ---------- */
+.calc {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.calc-display {
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  padding: 12px 14px;
+  text-align: right;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.calc-expr {
+  min-height: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.calc-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.calc-key {
+  min-height: 50px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.calc-key:active {
+  transform: scale(0.96);
+}
+
+.calc-key.util {
+  background: var(--card-2);
+  color: var(--muted);
+}
+
+.calc-key.op {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.calc-key.equals {
+  background: linear-gradient(160deg, var(--grad-a), var(--grad-b));
+  border: 0;
+  color: var(--on-accent);
+}
+
 /* ---------- exchange rate rows (Settings → Currency) ---------- */
 .rate-list {
   display: grid;
