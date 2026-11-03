@@ -24,6 +24,10 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- The toast lives outside #app on purpose: render() rebuilds #app on every
+         action, so a toast inside it was destroyed the moment it appeared
+         (any toast followed by render() never showed at all). -->
+    <div class="toast" id="toast"></div>
     <div id="boot-error" hidden>
       <h2>Could not load Personal Cash Flow</h2>
       <p>The app files failed to load. Try reloading, or serve the folder over http.</p>

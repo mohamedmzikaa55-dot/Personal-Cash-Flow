@@ -22,6 +22,9 @@ let chartPeriod = 'month'
 // edit & delete controls instead of hiding them behind the edit form.
 let budgetEdit = false
 let dueRefreshTimer = null
+// One hide-timer for the whole toast, so a second message shown while the
+// first is still up is not cut short by the first message's timer.
+let toastTimer = null
 let calMonth = null
 let calSelected = null
 // Budgets tab: its own calendar month and selected day, kept apart from the
@@ -2719,7 +2722,6 @@ function render() {
       </nav>
     </div>
     ${renderModal()}
-    <div class="toast" id="toast"></div>
   `
   document.body.classList.toggle('modal-open', Boolean(modal))
   const repeatSel = document.querySelector('select[data-repeat]')
@@ -2783,7 +2785,11 @@ function toast(message) {
   if (!el) return
   el.textContent = message
   el.classList.add('show')
-  setTimeout(() => el.classList.remove('show'), 1900)
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    el.classList.remove('show')
+    toastTimer = null
+  }, 1900)
 }
 
 function applyTheme() {
@@ -2917,13 +2923,28 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'check-update') {
+    // Three ways this can be dead, and only one of them is the browser's:
+    //  · an insecure origin — service workers only exist on https:// or
+    //    localhost, so on a plain http://<LAN IP> address the browser hides the
+    //    API entirely. Check this first, or it gets misreported as a browser
+    //    that does not support updates.
+    //  · no Service Worker API at all — a browser that really lacks it.
+    //  · offline — the check cannot reach the server.
+    if (!window.isSecureContext) {
+      toast(`Updates need HTTPS or localhost — this page is open on ${location.hostname || 'an insecure address'}`)
+      return
+    }
     if (!('serviceWorker' in navigator)) { toast('Updates are not supported in this browser'); return }
+    if (!navigator.onLine) { toast("You're offline — reconnect to check for updates"); return }
     toast('Checking for updates…')
     ensureRegistration()
       .then(() => checkForUpdate())
       .then(async (state) => {
         if (state === 'none') { toast('Updates are not supported in this browser'); return }
-        if (state === 'failed') { toast('Update check failed — try again in a moment'); return }
+        if (state === 'failed') {
+          toast(navigator.onLine ? 'Update check failed — try again in a moment' : "You're offline — reconnect to check for updates")
+          return
+        }
         if (state === 'ready') {
           const worker = swReg && (swReg.waiting || swReg.installing)
           if (worker) applyUpdate(worker)
@@ -2936,7 +2957,13 @@ document.addEventListener('click', (event) => {
         // is stuck and a hard refresh is what actually gets them the new files.
         const serverVersion = swVersionOf(await fetchSwScript())
         const runningVersion = await runningSwVersion()
-        if (serverVersion && runningVersion && serverVersion !== runningVersion) {
+        if (!serverVersion) {
+          // The server's sw.js could not be read (offline, or the host answers
+          // every path with the app shell) — "up to date" would be a guess.
+          toast(navigator.onLine ? 'Could not read the server to compare versions' : "You're offline — reconnect to check for updates")
+          return
+        }
+        if (runningVersion && serverVersion !== runningVersion) {
           toast('New version found — refreshing')
           forceRefresh()
           return
