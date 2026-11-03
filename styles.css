@@ -2413,6 +2413,19 @@ label,
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
+/* Result of the last "Check for update". The toast only lives 1.9s, so the
+   answer also sits under the button where it can still be read. */
+.update-status {
+  margin-top: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.update-status[hidden] {
+  display: none;
+}
+
 .mono {
   font-variant-numeric: tabular-nums;
 }

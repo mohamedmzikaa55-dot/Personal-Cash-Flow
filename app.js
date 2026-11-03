@@ -25,6 +25,11 @@ let dueRefreshTimer = null
 // One hide-timer for the whole toast, so a second message shown while the
 // first is still up is not cut short by the first message's timer.
 let toastTimer = null
+// Last outcome of "Check for update". It is kept in state and shown in the
+// Backup row, because the toast only lives 1.9s — a check whose result only
+// ever appears in a toast reads as "nothing happened".
+let updateStatus = ''
+let updateChecking = false
 let calMonth = null
 let calSelected = null
 // Budgets tab: its own calendar month and selected day, kept apart from the
@@ -1996,6 +2001,7 @@ function renderMore() {
              <button class="ghost-btn" data-action="check-update">Check for update</button>
              <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
            </div>
+           <p class="tight update-status" id="update-status" role="status" ${updateStatus ? '' : 'hidden'}>${escapeHtml(updateStatus)}</p>
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
         `)}
         ${settingsRow('cash', 'Currency', currencySettingsHtml(settings, currencies))}
@@ -2792,6 +2798,19 @@ function toast(message) {
   }, 1900)
 }
 
+// Patch the status line under "Check for update" in place. render() would be
+// wrong here: it scrolls the settings list back to the top while the check is
+// still running. The element is recreated by any render(), so it is rebuilt
+// from `updateStatus` and only patched when it happens to be on screen.
+function setUpdateStatus(message) {
+  updateStatus = message
+  const el = document.getElementById('update-status')
+  if (el) {
+    el.textContent = message
+    el.hidden = false
+  }
+}
+
 function applyTheme() {
   document.documentElement.dataset.theme = store.getTheme()
   const meta = document.querySelector('meta[name="theme-color"]')
@@ -2930,47 +2949,85 @@ document.addEventListener('click', (event) => {
     //    that does not support updates.
     //  · no Service Worker API at all — a browser that really lacks it.
     //  · offline — the check cannot reach the server.
+    const OFFLINE = "You're offline — reconnect to check for updates"
+    const fail = (message) => { setUpdateStatus(message); toast(message) }
     if (!window.isSecureContext) {
-      toast(`Updates need HTTPS or localhost — this page is open on ${location.hostname || 'an insecure address'}`)
+      fail(`Updates need HTTPS or localhost — this page is open on ${location.hostname || 'an insecure address'}`)
       return
     }
-    if (!('serviceWorker' in navigator)) { toast('Updates are not supported in this browser'); return }
-    if (!navigator.onLine) { toast("You're offline — reconnect to check for updates"); return }
+    if (!('serviceWorker' in navigator)) { fail('Updates are not supported in this browser'); return }
+    if (!navigator.onLine) { fail(OFFLINE); return }
+    if (updateChecking) return
+    updateChecking = true
+
+    // Every outcome lands in both places: the toast is the immediate ping, the
+    // status line under the button is what is left after the toast fades. A
+    // result that exists for only 1.9s reads as "nothing happened".
+    let settled = false
+    const finish = (message) => {
+      if (settled) return
+      settled = true
+      updateChecking = false
+      fail(message)
+    }
+    // A path that goes on to act on its own (installing, reloading) — record
+    // where it got to without letting the deadline speak over it later.
+    const proceed = (message) => {
+      if (settled) return
+      settled = true
+      updateChecking = false
+      setUpdateStatus(message)
+    }
+    setUpdateStatus('Checking for updates…')
     toast('Checking for updates…')
-    ensureRegistration()
-      .then(() => checkForUpdate())
-      .then(async (state) => {
-        if (state === 'none') { toast('Updates are not supported in this browser'); return }
-        if (state === 'failed') {
-          toast(navigator.onLine ? 'Update check failed — try again in a moment' : "You're offline — reconnect to check for updates")
-          return
-        }
-        if (state === 'ready') {
-          const worker = swReg && (swReg.waiting || swReg.installing)
-          if (worker) applyUpdate(worker)
-          else window.location.reload()
-          return
-        }
-        // The browser found nothing through the normal path. Before telling the
-        // user they are current, prove it against the server: if sw.js there is
-        // a different release than the worker running this page, the update path
-        // is stuck and a hard refresh is what actually gets them the new files.
-        const serverVersion = swVersionOf(await fetchSwScript())
-        const runningVersion = await runningSwVersion()
-        if (!serverVersion) {
-          // The server's sw.js could not be read (offline, or the host answers
-          // every path with the app shell) — "up to date" would be a guess.
-          toast(navigator.onLine ? 'Could not read the server to compare versions' : "You're offline — reconnect to check for updates")
-          return
-        }
-        if (runningVersion && serverVersion !== runningVersion) {
-          toast('New version found — refreshing')
-          forceRefresh()
-          return
-        }
-        toast('App is up to date')
+
+    // Hard deadline across the whole chain. register() and fetch() both hang
+    // without limit when the server accepts connections but never answers, and
+    // then the button never reports anything at all — this guarantees an answer.
+    const deadline = new Promise((resolve) => setTimeout(() => resolve('__deadline__'), 15000))
+    Promise.race([
+      ensureRegistration()
+        .then(() => checkForUpdate())
+        .then(async (state) => {
+          if (state === 'none') { finish('Updates are not supported in this browser'); return }
+          if (state === 'failed') { finish(navigator.onLine ? 'Update check failed — try again in a moment' : OFFLINE); return }
+          if (state === 'ready') {
+            const worker = swReg && (swReg.waiting || swReg.installing)
+            proceed(worker ? 'Update ready — installing…' : 'Loading the new version…')
+            if (worker) applyUpdate(worker)
+            else window.location.reload()
+            return
+          }
+          // The browser found nothing through the normal path. Before telling the
+          // user they are current, prove it against the server: if sw.js there is
+          // a different release than the worker running this page, the update path
+          // is stuck and a hard refresh is what actually gets them the new files.
+          const serverVersion = swVersionOf(await fetchSwScript())
+          const runningVersion = await runningSwVersion()
+          if (settled) return
+          if (!serverVersion) {
+            // The server's sw.js could not be read (offline, or the host answers
+            // every path with the app shell) — "up to date" would be a guess.
+            finish(navigator.onLine ? 'Could not read the app server to compare versions' : OFFLINE)
+            return
+          }
+          if (runningVersion && serverVersion !== runningVersion) {
+            proceed('New version found — refreshing…')
+            toast('New version found — refreshing')
+            forceRefresh()
+            return
+          }
+          finish('App is up to date')
+        }),
+      deadline,
+    ])
+      .then((res) => { if (res === '__deadline__') finish('The app server did not answer — check it is running') })
+      .catch((err) => {
+        // A timeout here means the request never came back, not that anything
+        // is wrong with the browser — say which it is.
+        if (/timed out|abort/i.test(String((err && err.message) || ''))) finish('The app server did not answer — check it is running')
+        else finish(navigator.onLine ? 'Could not check for updates' : OFFLINE)
       })
-      .catch(() => toast('Could not check for updates'))
     return
   }
 
@@ -3666,11 +3723,21 @@ if ('serviceWorker' in navigator) {
 // has not resolved yet (or failed). updateViaCache: 'none' keeps the worker
 // script out of the HTTP cache, so a host that caches .js for a long time still
 // hands the update check the new release.
-function ensureRegistration() {
+// The deadline matters: register() fetches sw.js, and a server that accepts
+// connections but never answers leaves that promise pending forever — without
+// a limit the button then never reports anything at all.
+function ensureRegistration(timeout = 6000) {
   if (swReg) return Promise.resolve(swReg)
-  return navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
-    .then((reg) => { if (reg) swReg = reg; return swReg })
-    .catch(() => swReg)
+  const pending = navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+  // Keep the eventual answer for later even if this call gives up waiting.
+  pending.then((reg) => { if (reg && !swReg) swReg = reg }, () => {})
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('registration timed out')), timeout)
+    pending.then(
+      (reg) => { clearTimeout(timer); if (reg) swReg = reg; resolve(swReg) },
+      (err) => { clearTimeout(timer); reject(err) }
+    )
+  })
 }
 
 // The version constant baked into a copy of sw.js.
@@ -3680,11 +3747,20 @@ function swVersionOf(text) {
 }
 
 // sw.js straight from the server, bypassing the HTTP cache. The worker itself
-// never caches sw.js, so this reaches the network.
-function fetchSwScript() {
-  return fetch('./sw.js', { cache: 'reload' })
+// never caches sw.js, so this reaches the network. Bounded, because this runs
+// after the browser's own check and an unanswered request would otherwise leave
+// the button with nothing to report — ever.
+function fetchSwScript(timeout = 4000) {
+  const canAbort = typeof AbortController === 'function'
+  const controller = canAbort ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), timeout) : null
+  return fetch('./sw.js', controller ? { cache: 'reload', signal: controller.signal } : { cache: 'reload' })
     .then((res) => (res && res.ok ? res.text() : ''))
     .catch(() => '')
+    .then((text) => {
+      if (timer) clearTimeout(timer)
+      return text
+    })
 }
 
 // The version of the worker that is actually running this page. Answered over a
