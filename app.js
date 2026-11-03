@@ -30,6 +30,11 @@ let budgetCal = null
 let budgetCalDay = null
 // Activity tab: which debt-person groups are expanded (collapsed by default).
 let debtOpenPeople = new Set()
+// More tab: which sections are expanded. Every section starts collapsed, so
+// the tab opens as an index instead of one endless settings page — this set is
+// what keeps a section open while you work inside it, because every action
+// re-renders the whole screen.
+let moreOpen = new Set()
 
 // ---------- overlay history ----------
 // Every modal / drill-down pushes a history entry so the Android back button,
@@ -1838,6 +1843,27 @@ function currencySettingsHtml(settings, currencies) {
   `
 }
 
+// One collapsible block of the More tab. The head is the whole row (title,
+// one-line summary of what is inside, chevron, optional + Add), and the body
+// only exists while the section is open — the same shape as the debt groups on
+// the Activity tab, which also start collapsed.
+function moreSection({ key, title, meta = '', action = '', actionLabel = '', body = '' }) {
+  const open = moreOpen.has(key)
+  return `
+    <section class="section">
+      <div class="section-head collapsible${open ? ' open' : ''}" data-action="toggle-more" data-key="${key}">
+        <div class="section-head-text">
+          <h2><button type="button" class="section-toggle" aria-expanded="${open}">${title}</button></h2>
+          ${meta ? `<span class="section-meta">${meta}</span>` : ''}
+        </div>
+        ${action ? `<button type="button" class="ghost-btn compact" data-action="${action}">${actionLabel}</button>` : ''}
+        <span class="chev" aria-hidden="true">${icon('chevron')}</span>
+      </div>
+      ${open ? `<div class="section-body">${body}</div>` : ''}
+    </section>
+  `
+}
+
 function renderMore() {
   const settings = store.getSettings()
   const debts = store.debtSummary()
@@ -1848,6 +1874,9 @@ function renderMore() {
   // The same currency list the wallet form offers, so a main/secondary
   // currency can always be picked for the balances already in use.
   const currencies = store.currencyChoices()
+  // Head summaries, so a collapsed section still says what it holds.
+  const repeatCount = store.getRepeatingSchedules('income').length + store.getRepeatingSchedules('expense').length
+  const worth = assets.filter((a) => !a.sold).reduce((s, a) => s + a.buyingPrice, 0)
   return `
     <div class="topbar">
       <div>
@@ -1857,17 +1886,23 @@ function renderMore() {
       <button class="ghost-btn compact" data-action="set-theme">${settings.theme === 'light' ? 'Dark' : 'Light'} mode</button>
     </div>
 
-    <section class="section">
-      <div class="section-head"><h2>Repeated income &amp; expenses</h2></div>
-      <div class="repeat-disclosures">
-        ${repeatingScheduleDisclosure('income', 'Repeated income')}
-        ${repeatingScheduleDisclosure('expense', 'Repeated expense')}
-      </div>
-    </section>
+    ${moreSection({
+      key: 'repeat',
+      title: 'Repeated income &amp; expenses',
+      meta: `${repeatCount} schedule${repeatCount === 1 ? '' : 's'}`,
+      body: `
+        <div class="repeat-disclosures">
+          ${repeatingScheduleDisclosure('income', 'Repeated income')}
+          ${repeatingScheduleDisclosure('expense', 'Repeated expense')}
+        </div>
+      `
+    })}
 
-    <section class="section">
-      <div class="section-head"><h2>Preferences</h2></div>
-      <div class="list">
+    ${moreSection({
+      key: 'prefs',
+      title: 'Preferences',
+      meta: `Pending ${settings.pendingAffectsBalance ? 'counts as moved' : 'waits for release'} · Reminder ${settings.reminderEnabled ? `on at ${escapeHtml(settings.reminderTime || '20:00')}` : 'off'}`,
+      body: `<div class="list">
         ${settingsRow('cal', 'Pending transactions', `
           <p class="muted tight">Choose what a transfer, income or expense marked “Pending” does: wait until you release it, or move the money right away.</p>
           <div class="chip-row">
@@ -1885,13 +1920,16 @@ function renderMore() {
             <input type="time" data-action="set-reminder-time" value="${escapeHtml(settings.reminderTime || '20:00')}" />
           </label>
         `)}
-      </div>
-    </section>
+      </div>`
+    })}
 
-    <section class="section">
-      <div class="section-head"><h2>Assets</h2><button class="ghost-btn compact" data-action="new-asset">+ Add</button></div>
-      <p class="muted tight" style="margin-bottom:10px">${assets.length} item${assets.length === 1 ? '' : 's'} · worth ${money(assets.filter((a) => !a.sold).reduce((s, a) => s + a.buyingPrice, 0))}</p>
-      <div class="list">
+    ${moreSection({
+      key: 'assets',
+      title: 'Assets',
+      meta: `${assets.length} item${assets.length === 1 ? '' : 's'} · worth ${money(worth)}`,
+      action: 'new-asset',
+      actionLabel: '+ Add',
+      body: `<div class="list">
         ${assets.length ? assets.map((a) => `
           <article class="item" data-action="edit-asset" data-id="${a.id}">
             <span class="avatar asset">${escapeHtml((a.name || '?').charAt(0).toUpperCase())}</span>
@@ -1902,33 +1940,40 @@ function renderMore() {
             <div class="amount mono">${a.sold ? money(a.sellingPrice) : money(a.buyingPrice)}</div>
           </article>
         `).join('') : emptyState('No assets tracked.', 'inbox')}
-      </div>
-    </section>
+      </div>`
+    })}
 
-    <section class="section">
-      <div class="section-head"><h2>Debts</h2><button class="ghost-btn compact" data-action="new-debt">+ Add</button></div>
-      <p class="muted tight" style="margin-bottom:10px">Lent ${money(debts.lent)} · collected ${money(debts.collected)} · still to collect ${money(debts.outstanding)}</p>
-      ${(debts.borrowed || debts.returned) ? `<p class="muted tight" style="margin-bottom:10px">Borrowed ${money(debts.borrowed)} · returned ${money(debts.returned)} · still to return ${money(debts.payable)}</p>` : ''}
-      ${debtPeople.length ? `
-      <div class="list" style="margin-bottom:10px">
-        ${debtPeople.map((p) => `
-          <article class="item">
-            <span class="avatar debt">${icon('person')}</span>
-            <div class="body">
-              <div class="title">${escapeHtml(p.person)}</div>
-              <div class="meta">${[p.receivable ? `owes you ${money(p.receivable)}` : '', p.payable ? `you owe ${money(p.payable)}` : '', `${p.count} record${p.count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</div>
-            </div>
-          </article>
-        `).join('')}
-      </div>` : ''}
-      <div class="list">
-        ${debtList.length ? debtList.map(debtTxRow).join('') : emptyState('No debts tracked.', 'inbox')}
-      </div>
-    </section>
+    ${moreSection({
+      key: 'debts',
+      title: 'Debts',
+      meta: `Lent ${money(debts.lent)} · collected ${money(debts.collected)} · still to collect ${money(debts.outstanding)}`,
+      action: 'new-debt',
+      actionLabel: '+ Add',
+      body: `
+        ${(debts.borrowed || debts.returned) ? `<p class="muted tight" style="margin-bottom:10px">Borrowed ${money(debts.borrowed)} · returned ${money(debts.returned)} · still to return ${money(debts.payable)}</p>` : ''}
+        ${debtPeople.length ? `
+        <div class="list" style="margin-bottom:10px">
+          ${debtPeople.map((p) => `
+            <article class="item">
+              <span class="avatar debt">${icon('person')}</span>
+              <div class="body">
+                <div class="title">${escapeHtml(p.person)}</div>
+                <div class="meta">${[p.receivable ? `owes you ${money(p.receivable)}` : '', p.payable ? `you owe ${money(p.payable)}` : '', `${p.count} record${p.count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</div>
+              </div>
+            </article>
+          `).join('')}
+        </div>` : ''}
+        <div class="list">
+          ${debtList.length ? debtList.map(debtTxRow).join('') : emptyState('No debts tracked.', 'inbox')}
+        </div>
+      `
+    })}
 
-    <section class="section">
-      <div class="section-head"><h2>Data</h2></div>
-      <div class="list">
+    ${moreSection({
+      key: 'data',
+      title: 'Data',
+      meta: 'Backup · CSV import · Currency',
+      body: `<div class="list">
         ${settingsRow('check', 'App status', `
           <p class="muted tight">Works fully offline · updates automatically when online · an automatic data backup is exported before every update.</p>
           <button class="ghost-btn" data-action="install-app">${deferredInstall ? 'Install app' : 'Install app (browser menu)'}</button>
@@ -1951,8 +1996,8 @@ function renderMore() {
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
         `)}
         ${settingsRow('cash', 'Currency', currencySettingsHtml(settings, currencies))}
-      </div>
-    </section>
+      </div>`
+    })}
 
     <p class="muted tight" style="text-align:center;margin-top:8px">Personal Cash Flow · offline · saved on this device</p>
   `
@@ -2779,6 +2824,13 @@ document.addEventListener('click', (event) => {
     const key = actionEl.dataset.person || ''
     if (debtOpenPeople.has(key)) debtOpenPeople.delete(key)
     else debtOpenPeople.add(key)
+    render()
+    return
+  }
+  if (action === 'toggle-more') {
+    const key = actionEl.dataset.key || ''
+    if (moreOpen.has(key)) moreOpen.delete(key)
+    else moreOpen.add(key)
     render()
     return
   }

@@ -336,6 +336,60 @@ h2 svg {
   gap: 8px;
 }
 
+/* ---------- collapsible section heads (More tab) ---------- */
+/* The whole head row is the tap target; the title stays a real button inside
+   the heading so keyboard and screen-reader users can operate it too. */
+.section-head.collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-head.collapsible:active {
+  opacity: 0.7;
+}
+
+.section-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.section-meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.section-head .chev {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.section-head .chev svg {
+  width: 16px;
+  height: 16px;
+}
+
+.section-head.open .chev {
+  transform: rotate(90deg);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
