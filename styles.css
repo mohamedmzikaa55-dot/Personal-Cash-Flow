@@ -1842,6 +1842,12 @@ textarea::placeholder {
   color: var(--on-accent);
 }
 
+/* The 0 key spans two columns so the last row fills the grid — it used to
+   leave an empty hole to the right of =. */
+.calc-key.wide {
+  grid-column: span 2;
+}
+
 /* ---------- exchange rate rows (Settings → Currency) ---------- */
 .rate-list {
   display: grid;

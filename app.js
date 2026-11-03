@@ -90,16 +90,13 @@ window.addEventListener('popstate', () => {
     return
   }
   // The calculator is the top overlay: the back navigation that opened this pop
-  // is its dismissal, so just bring the sheet underneath it back.
-  if (modal === 'calc') {
-    const returnTo = calcReturn
-    calcReturn = null
+  // is its dismissal, so just take it away. The sheet underneath was never
+  // re-rendered, so every field the user already filled in is still there —
+  // deliberately no render() here, it would wipe the open form.
+  if (calcOverlay) {
+    calcOverlay.remove()
+    calcOverlay = null
     pushedOverlays = Math.max(0, pushedOverlays - 1)
-    modal = null
-    modalPayload = null
-    const restore = returnTo
-    if (restore) { modal = restore.modal; modalPayload = restore.payload }
-    render()
     return
   }
   if (closeTopOverlay()) {
@@ -2050,7 +2047,7 @@ function scheduleModalHtml() {
 // The simple in-sheet calculator used next to the amount fields: add, subtract,
 // multiply, divide, clear, negate and backspace. Enough for quick "split this"
 // or "how much did I spend" sums without leaving the app.
-let calc = { current: '0', acc: null, op: null, fresh: true, expr: '' }
+let calc = { current: '0', acc: null, op: null, fresh: true, expr: '', error: false }
 
 function calcReset() {
   calc.current = '0'
@@ -2058,6 +2055,7 @@ function calcReset() {
   calc.op = null
   calc.fresh = true
   calc.expr = ''
+  calc.error = false
 }
 
 function calcRound(n) {
@@ -2070,43 +2068,103 @@ function calcApply(a, b, op) {
   if (op === '+') return x + y
   if (op === '-') return x - y
   if (op === '×') return x * y
-  if (op === '÷') return y === 0 ? 0 : x / y
+  // Division by zero used to be reported as a confident 0. Fail loudly instead:
+  // a made-up 0 is a wrong amount waiting to be saved.
+  if (op === '÷') return y === 0 ? NaN : x / y
   return y
 }
 
+// Evaluate one pending operation. The finiteness check has to happen before
+// calcRound(): calcRound(NaN) coerces its input with || 0 and would happily
+// turn the failed division into a perfectly saveable 0.
+function calcStep(acc, input, op) {
+  const raw = calcApply(acc, input, op)
+  if (!Number.isFinite(raw)) return NaN
+  return calcRound(raw)
+}
+
+// Lock the pad after a non-finite result. Only C takes it out again, so a
+// broken sum can never be handed to the amount field.
+function calcFail() {
+  calc.error = true
+  calc.expr = 'Cannot divide by zero'
+  calc.acc = null
+  calc.op = null
+  calc.current = '0'
+  calc.fresh = true
+}
+
+// Two decimals, because that is the precision the amount fields accept
+// (step="0.01") — a longer value would be rejected by the form on save.
 function calcValue() {
   const n = Number(parseFloat(calc.current))
-  return Number.isFinite(n) ? n : 0
+  return Number.isFinite(n) ? calcRound(n) : 0
+}
+
+// Show the entry exactly as typed, grouped for readability ("12345.6" →
+// "12,345.6"). Only presentation: calc.current stays raw, so the decimal point
+// you just pressed and a third decimal digit are both really there.
+function formatCalcEntry(text) {
+  const raw = String(text)
+  if (/e/i.test(raw)) {
+    const n = Number(raw)
+    return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 20 }) : raw
+  }
+  const negative = raw.startsWith('-')
+  const body = negative ? raw.slice(1) : raw
+  const [whole, decimals] = body.split('.')
+  const grouped = (whole || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const out = decimals === undefined ? grouped : `${grouped}.${decimals}`
+  return negative ? `-${out}` : out
 }
 
 function calcDisplayText() {
-  const head = (calc.op && calc.acc !== null) ? `${calcRound(calc.acc)} ${calc.op}` : (calc.expr || '')
-  const shown = calcRound(Number(parseFloat(calc.current)) || 0)
-  return { head, value: String(Math.round(shown * 100) / 100) }
+  if (calc.error) return { head: calc.expr, value: 'Error' }
+  const head = (calc.op && calc.acc !== null)
+    ? `${formatCalcEntry(String(calcRound(calc.acc)))} ${calc.op}`
+    : (calc.expr || '')
+  return { head, value: formatCalcEntry(calc.current) }
 }
 
 function calcRenderDisplay() {
   const valueEl = document.getElementById('calc-value')
   const exprEl = document.getElementById('calc-expr')
-  if (valueEl) valueEl.textContent = calcDisplayText().value
-  if (exprEl) exprEl.textContent = calcDisplayText().head || '\u00A0'
+  if (!valueEl && !exprEl) return
+  const display = calcDisplayText()
+  if (valueEl) valueEl.textContent = display.value
+  if (exprEl) exprEl.textContent = display.head || '\u00A0'
 }
 
 function calcPress(key) {
+  if (calc.error) {
+    // A failed calculation ignores every key but C — no half-broken state.
+    if (key === 'C') { calcReset(); calcRenderDisplay() }
+    return
+  }
   if (key === 'C') { calcReset(); calcRenderDisplay(); return }
   if (key === '⌫') {
     if (calc.fresh) return
     const next = String(calc.current).slice(0, -1)
-    calc.current = next || '0'
-    if (calc.current === '0') calc.fresh = true
+    calc.current = next === '' || next === '-' ? '0' : next
+    if (calc.current === '0') { calc.fresh = true; calc.expr = '' }
     calcRenderDisplay()
     return
   }
-  if (key === '±') { calc.current = String(-Math.abs(Number(parseFloat(calc.current)) || 0)); calcRenderDisplay(); return }
+  if (key === '±') {
+    // Toggle, don't force negative: the old -Math.abs() left -5 as -5, so a
+    // negative number could never be turned back into a positive one.
+    const raw = String(calc.current)
+    const next = raw.startsWith('-') ? raw.slice(1) : `-${raw}`
+    calc.current = Number(next) === 0 && !next.includes('.') ? '0' : next
+    calc.expr = ''
+    calcRenderDisplay()
+    return
+  }
   if (key === '+' || key === '-' || key === '×' || key === '÷') {
     const input = Number(parseFloat(calc.current)) || 0
     if (calc.op && calc.acc !== null && !calc.fresh) {
-      const result = calcRound(calcApply(calc.acc, input, calc.op))
+      const result = calcStep(calc.acc, input, calc.op)
+      if (!Number.isFinite(result)) { calcFail(); calcRenderDisplay(); return }
       calc.acc = result
       calc.current = String(result)
     } else {
@@ -2114,14 +2172,16 @@ function calcPress(key) {
     }
     calc.op = key
     calc.fresh = true
-    calc.expr = `${calcRound(calc.acc)} ${key}`
+    calc.expr = `${formatCalcEntry(String(calcRound(calc.acc)))} ${key}`
     calcRenderDisplay()
     return
   }
   if (key === '=') {
     if (calc.op && calc.acc !== null) {
-      const result = calcRound(calcApply(calc.acc, Number(parseFloat(calc.current)) || 0, calc.op))
-      calc.expr = `${calcRound(calc.acc)} ${calc.op} ${calcRound(Number(parseFloat(calc.current)) || 0)} =`
+      const right = Number(parseFloat(calc.current)) || 0
+      const result = calcStep(calc.acc, right, calc.op)
+      if (!Number.isFinite(result)) { calcFail(); calcRenderDisplay(); return }
+      calc.expr = `${formatCalcEntry(String(calcRound(calc.acc)))} ${calc.op} ${formatCalcEntry(String(calcRound(right)))} =`
       calc.current = String(result)
       calc.acc = null
       calc.op = null
@@ -2131,49 +2191,66 @@ function calcPress(key) {
     return
   }
   if (key === '.') {
-    if (calc.fresh) { calc.current = '0.'; calc.fresh = false }
+    if (calc.fresh) { calc.current = '0.'; calc.fresh = false; calc.expr = '' }
     else if (!String(calc.current).includes('.')) calc.current = `${calc.current}.`
     calcRenderDisplay()
     return
   }
-  if (calc.fresh) { calc.current = key; calc.fresh = false }
+  // Starting a new number drops the finished equation ("5 + 3 ="), otherwise it
+  // stayed on screen next to the next result.
+  if (calc.fresh) { calc.current = key; calc.fresh = false; calc.expr = '' }
+  // A typed 0 is a placeholder: 05 is not a number anybody meant to enter.
+  else if (calc.current === '0' || calc.current === '-0') calc.current = calc.current.startsWith('-') ? `-${key}` : key
   else if (String(calc.current).replace(/[-.]/g, '').length < 12) calc.current += key
   calcRenderDisplay()
 }
 
-// The calculator lives on top of the sheet that opened it (the transaction
-// form), so it pushes its own overlay and hands the amount back through here.
-let calcReturn = null
+// The calculator mounts as its own overlay on top of the sheet that opened it
+// (the transaction form) instead of replacing that sheet. Going through
+// render() with modal = 'calc' used to throw the whole open form away — the
+// form is rebuilt from modalPayload on the way back, so the description,
+// wallet, date, note and every other field the user had already filled in came
+// back blank. Keeping the pad in its own element means the form DOM simply
+// stays put while it is open.
+let calcOverlay = null
 
 function calcOpen() {
+  if (calcOverlay) return
   calcReset()
-  calcReturn = { modal: modal, payload: modalPayload }
-  modal = 'calc'
+  // Leave the amount field first so the on-screen keyboard cannot sit on top
+  // of the pad's own keys.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
   pushOverlay()
-  render()
+  const host = document.createElement('div')
+  host.innerHTML = calcModalHtml()
+  calcOverlay = host.firstElementChild
+  document.body.appendChild(calcOverlay)
 }
 
 // Close the calculator. When a value is passed the amount field of the sheet we
 // came from (income / expense / transfer / debt) is filled in and focused.
 function calcClose(value) {
-  const returnTo = calcReturn
-  calcReturn = null
-  modal = null
-  modalPayload = null
-  pushedOverlays = Math.max(0, pushedOverlays - 1)
-  suppressPop = true
-  try { history.back() } catch { suppressPop = false }
-  const restore = returnTo
-  if (restore) { modal = restore.modal; modalPayload = restore.payload }
-  render()
-  if (value !== undefined && Number.isFinite(value)) {
-    const form = document.querySelector(`form[data-form="${modal || ''}"]`)
-    const input = form ? form.querySelector('input[name="amount"]') : null
-    if (input) {
-      input.value = String(value)
-      input.focus()
-    }
+  // Already gone (double tap, or the back button beat us to it): never pop a
+  // second history entry, that one belongs to the sheet underneath.
+  if (!calcOverlay) return
+  calcOverlay.remove()
+  calcOverlay = null
+  if (pushedOverlays > 0) {
+    pushedOverlays -= 1
+    suppressPop = true
+    try { history.back() } catch { suppressPop = false }
   }
+  if (value === undefined || !Number.isFinite(value)) return
+  const form = document.querySelector(`form[data-form="${modal || ''}"]`)
+  const input = form ? form.querySelector('input[name="amount"]') : null
+  if (!input) return
+  input.value = String(value)
+  // Wake the form up: without the events its own listeners (the debt room
+  // hint, the wallet preview) would keep showing the pre-calculation number.
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  input.focus()
+  updateDebtAmountLimit()
 }
 
 function calcModalHtml() {
@@ -2182,9 +2259,9 @@ function calcModalHtml() {
     ['7', 'calc-key', 'calc-key'], ['8', 'calc-key', 'calc-key'], ['9', 'calc-key', 'calc-key'], ['×', 'calc-key', 'calc-key op'],
     ['4', 'calc-key', 'calc-key'], ['5', 'calc-key', 'calc-key'], ['6', 'calc-key', 'calc-key'], ['-', 'calc-key', 'calc-key op'],
     ['1', 'calc-key', 'calc-key'], ['2', 'calc-key', 'calc-key'], ['3', 'calc-key', 'calc-key'], ['+', 'calc-key', 'calc-key op'],
-    ['0', 'calc-key', 'calc-key'], ['.', 'calc-key', 'calc-key'], ['=', 'calc-key', 'calc-key equals']
+    ['0', 'calc-key', 'calc-key wide'], ['.', 'calc-key', 'calc-key'], ['=', 'calc-key', 'calc-key equals']
   ]
-  const grid = keys.map(([k, action, cls]) => `<button type="button" class="${cls}" data-action="${action}" data-key="${k}" aria-label="${action === 'calc-clear' ? 'Clear' : action === 'calc-add' ? 'Add result' : k}">${k === '⌫' ? '⌫' : k === '±' ? '±' : k}</button>`).join('')
+  const grid = keys.map(([k, action, cls]) => `<button type="button" class="${cls}" data-action="${action}" data-key="${k}" aria-label="${action === 'calc-clear' ? 'Clear' : k}">${k}</button>`).join('')
   const display = calcDisplayText()
   return `
     <div class="modal-backdrop" data-action="close-calc">
@@ -2211,8 +2288,6 @@ function calcModalHtml() {
 
 function renderModal() {
   if (!modal) return ''
-
-  if (modal === 'calc') return calcModalHtml()
 
   if (modal === 'schedule') return scheduleModalHtml()
 
@@ -2871,9 +2946,22 @@ document.addEventListener('click', (event) => {
   if (action === 'open-choose') { openModal('choose', null); return }
   if (action === 'open-wallet-new') { openModal('wallet', {}, fromChoose); return }
   if (action === 'open-calc') { calcOpen(); return }
-  if (action === 'close-calc') { calcClose(); return }
+  if (action === 'close-calc') {
+    // Only a tap on the dimmed backdrop dismisses it. Everything else inside
+    // the sheet — the display, the title, the gaps between keys — used to
+    // bubble up here too and silently throw the calculation away.
+    if (event.target.classList.contains('modal-backdrop')) calcClose()
+    return
+  }
   if (action === 'calc-cancel') { calcClose(); return }
-  if (action === 'calc-add') { const value = calcValue(); if (Number.isFinite(value) && value !== 0) calcClose(value); return }
+  if (action === 'calc-add') {
+    if (calc.error) return
+    const value = calcValue()
+    // 0 is a legitimate result (5 - 5 =). It used to be skipped here, which
+    // left the Add button doing nothing at all.
+    if (Number.isFinite(value)) calcClose(value)
+    return
+  }
   if (action === 'calc-clear') { calcReset(); calcRenderDisplay(); return }
   if (action === 'calc-key') { calcPress(actionEl.dataset.key); return }
 
