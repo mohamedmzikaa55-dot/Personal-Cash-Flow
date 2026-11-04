@@ -3270,10 +3270,14 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  if (action === 'import-csv') { const i = document.getElementById('csv-input'); if (i) i.click(); return }
+  if (action === 'import-csv') { openFilePicker('csv-input', importCsvFile); return }
   if (action === 'export-backup') {
-    downloadBackup(`personal-cash-flow-backup-${store.todayISO()}.json`)
-    toast('Backup exported')
+    try {
+      downloadBackup(`personal-cash-flow-backup-${store.todayISO()}.json`)
+      toast('Backup exported')
+    } catch (err) {
+      toast('Export failed — ' + ((err && err.message) || 'try again'))
+    }
     return
   }
   if (action === 'install-app') {
@@ -3289,7 +3293,7 @@ document.addEventListener('click', (event) => {
     pickBackupLocation()
     return
   }
-  if (action === 'import-backup') { const i = document.getElementById('backup-input'); if (i) i.click(); return }
+  if (action === 'import-backup') { openFilePicker('backup-input', importBackupFile); return }
   if (action === 'reset-all') {
     if (!window.confirm('Erase ALL data and restore the starter wallets/budgets? This cannot be undone.')) return
     store.resetAll()
@@ -3514,38 +3518,86 @@ document.addEventListener('change', (event) => {
     return
   }
   if (el && el.id === 'csv-input') {
-    const file = el.files && el.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const res = store.importCSVText(String(reader.result || ''))
-      if (!res.ok) toast(res.reason || "Couldn't read that CSV")
-      else toast(`Imported ${res.count} ${res.kind} row${res.count === 1 ? '' : 's'}`)
-      render()
-    }
-    reader.onerror = () => toast("Couldn't read that file")
-    reader.readAsText(file)
-    el.value = ''
+    // Handled by openFilePicker()'s own listener on the input (see below):
+    // a document-level listener misses the event once a re-render has detached
+    // the input, which is exactly what happened while the picker was open.
     return
   }
   if (el && el.id === 'backup-input') {
-    const file = el.files && el.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const ok = store.importBackup(JSON.parse(String(reader.result || '')))
-        toast(ok ? 'Backup restored' : 'That file is not a Cash Flow backup')
-      } catch {
-        toast('That file is not valid JSON')
-      }
-      render()
-    }
-    reader.onerror = () => toast("Couldn't read that file")
-    reader.readAsText(file)
-    el.value = ''
+    // Same as csv-input: the element-bound listener owns this file.
+    return
   }
 })
+
+// ---------- file pickers ----------
+// Opening a file picker sends the page into the background, and the
+// visibilitychange re-render below rebuilds #app the moment we come back —
+// before the input's change event has had a chance to reach a document-level
+// listener. The event then fires on a detached element and is lost in silence,
+// which is why "Restore backup" used to do nothing at all. Binding the handler
+// straight onto the input makes it survive any re-render, and the flag holds
+// that one visibility re-render back until the chosen file has arrived.
+let filePickerOpen = false
+let pendingPickerCleanup = null
+
+function openFilePicker(inputId, onFile) {
+  const input = document.getElementById(inputId)
+  if (!input) { toast('Reopen this section and try again'); return }
+  if (pendingPickerCleanup) pendingPickerCleanup()
+  filePickerOpen = true
+  const onChange = () => {
+    const file = input.files && input.files[0]
+    cleanup()
+    input.value = ''
+    if (file) onFile(file)
+  }
+  // Not every browser fires "cancel"; when it does, the next visibility
+  // return clears the flag instead, so a cancelled picker can never wedge it.
+  const onCancel = () => cleanup()
+  function cleanup() {
+    input.removeEventListener('change', onChange)
+    input.removeEventListener('cancel', onCancel)
+    if (pendingPickerCleanup === cleanup) pendingPickerCleanup = null
+    filePickerOpen = false
+  }
+  pendingPickerCleanup = cleanup
+  input.addEventListener('change', onChange)
+  input.addEventListener('cancel', onCancel)
+  input.click()
+}
+
+function importCsvFile(file) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    const res = store.importCSVText(String(reader.result || ''))
+    if (!res.ok) toast(res.reason || "Couldn't read that CSV")
+    else toast(`Imported ${res.count} ${res.kind} row${res.count === 1 ? '' : 's'}`)
+    render()
+  }
+  reader.onerror = () => toast("Couldn't read that file")
+  reader.readAsText(file)
+}
+
+function importBackupFile(file) {
+  // An empty file is the classic symptom of an object URL revoked too early
+  // during export — say so plainly instead of reporting bad JSON.
+  if (!file.size) { toast('That backup file is empty — export again'); render(); return }
+  const reader = new FileReader()
+  reader.onload = () => {
+    try {
+      // A byte-order mark left by another app would break JSON.parse.
+      const raw = String(reader.result || '')
+      const text = (raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw).trim()
+      const ok = store.importBackup(JSON.parse(text))
+      toast(ok ? 'Backup restored' : 'That file is not a Cash Flow backup')
+    } catch {
+      toast('That file is not valid JSON')
+    }
+    render()
+  }
+  reader.onerror = () => toast("Couldn't read that file")
+  reader.readAsText(file)
+}
 
 function downloadBackup(filename) {
   const blob = new Blob([store.exportBackup()], { type: 'application/json' })
@@ -3553,8 +3605,16 @@ function downloadBackup(filename) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  a.style.display = 'none'
+  // Safari and iOS ignore the click on an anchor that was never attached.
+  document.body.appendChild(a)
   a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 2000)
+  // Revoking straight away (or after a couple of seconds) is what left some
+  // phones with a 0-byte file: the download is still reading the blob.
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+    if (a.parentNode) a.parentNode.removeChild(a)
+  }, 30000)
 }
 
 async function pickBackupLocation() {
@@ -3572,10 +3632,16 @@ async function pickBackupLocation() {
       return
     } catch (err) {
       if (err && err.name === 'AbortError') return
+      // Anything else (permission denied, unsupported) falls through to the
+      // plain download rather than dying silently.
     }
   }
-  downloadBackup(filename)
-  toast('Backup exported')
+  try {
+    downloadBackup(filename)
+    toast('Backup exported')
+  } catch (err) {
+    toast('Export failed — ' + ((err && err.message) || 'try again'))
+  }
 }
 
 // Daily reminder to record transactions. While the app is open its timer fires
@@ -3601,10 +3667,16 @@ function scheduleReminder() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !modal) {
-    store.ensureRecurring()
-    render()
-  }
+  if (document.hidden) return
+  // Returning from a file picker: the listener bound to the input itself
+  // (openFilePicker) still has to receive the chosen file, and it is the one
+  // that re-renders afterwards. Rebuilding #app here would detach that input
+  // and the file would be lost without a single message.
+  const pendingFile = filePickerOpen
+  filePickerOpen = false
+  if (modal || pendingFile) return
+  store.ensureRecurring()
+  render()
 })
 
 // ---------- count-up animation on total numbers ----------
