@@ -550,8 +550,11 @@ function migrate(raw) {
   if (legacyCode && Number(out.settings.exchangeRate) > 0) {
     out.settings.rates[legacyCode] = roundRate(out.settings.exchangeRate)
   }
-  if (Array.isArray(raw.wallets) && raw.wallets.length) out.wallets = raw.wallets.map(normalizeWallet)
-  if (Array.isArray(raw.categories) && raw.categories.length) {
+  // An explicitly present collection wins even when it is empty: a cleared
+  // app (or a backup that deliberately holds none of something) must stay
+  // empty instead of quietly growing the starter wallets back on reload.
+  if (Array.isArray(raw.wallets)) out.wallets = raw.wallets.map(normalizeWallet)
+  if (Array.isArray(raw.categories)) {
     const oldDefaultIcons = {
       other: ['tag', 'more'],
       debt: ['coins', 'handcoin'],
@@ -565,7 +568,7 @@ function migrate(raw) {
       return normalized
     })
   }
-  if (Array.isArray(raw.sources) && raw.sources.length) out.sources = raw.sources.map(normalizeSource)
+  if (Array.isArray(raw.sources)) out.sources = raw.sources.map(normalizeSource)
   out.goals = Array.isArray(raw.goals) ? raw.goals.map(normalizeGoal) : []
   out.incomes = Array.isArray(raw.incomes) ? raw.incomes.map(normalizeIncome) : []
   out.expenses = Array.isArray(raw.expenses) ? raw.expenses.map(normalizeExpense) : []
@@ -1981,8 +1984,23 @@ export const store = {
     save()
     return true
   },
-  resetAll() {
-    state = defaultState()
+  // True "clear app data": every collection goes empty and only the default
+  // settings survive. migrate() keeps an explicitly empty collection empty,
+  // so this is also what comes back after the next reload.
+  clearAll() {
+    const fresh = defaultState()
+    state = {
+      ...fresh,
+      wallets: [],
+      categories: [],
+      sources: [],
+      goals: [],
+      incomes: [],
+      expenses: [],
+      transfers: [],
+      assets: [],
+      debts: []
+    }
     save()
   }
 }

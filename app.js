@@ -1999,7 +1999,7 @@ function renderMore() {
              <button class="ghost-btn" data-action="export-backup-pick">Export to location…</button>
              <button class="ghost-btn" data-action="import-backup">Restore backup</button>
              <button class="ghost-btn" data-action="check-update">Check for update</button>
-             <button class="ghost-btn danger" data-action="reset-all">Reset all</button>
+             <button class="ghost-btn danger" data-action="clear-app-data">Clear app data</button>
            </div>
            <p class="tight update-status" id="update-status" role="status" ${updateStatus ? '' : 'hidden'}>${escapeHtml(updateStatus)}</p>
           <input type="file" id="backup-input" accept=".json,application/json" hidden />
@@ -2381,6 +2381,29 @@ function renderModal() {
           </div>
           <div class="form-actions">
             <button class="ghost-btn" type="button" data-action="close-modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  // A destructive confirmation gets its own sheet instead of a native
+  // confirm(): the warning reads as part of the app, and the buttons can
+  // offer a last-moment backup before anything is thrown away.
+  if (modal === 'confirm-clear') {
+    return `
+      <div class="modal-backdrop" data-action="close-modal">
+        <div class="sheet">
+          <div class="handle"></div>
+          <h2>${icon('warn')} Are you sure?</h2>
+          <div class="form">
+            <p class="muted tight" style="margin-top:0">Clearing the app data removes every wallet, budget, income source, goal, asset, debt and transaction stored on this device. <b>This cannot be undone.</b></p>
+            <p class="muted tight" style="margin-top:0">Export a backup first if you think you may need this data again.</p>
+            <div class="form-actions">
+              <button class="ghost-btn" type="button" data-action="export-backup">Export backup first</button>
+              <button class="ghost-btn danger" type="button" data-action="confirm-clear">Yes, clear app data</button>
+              <button class="ghost-btn" type="button" data-action="close-modal">Cancel</button>
+            </div>
           </div>
         </div>
       </div>
@@ -3294,11 +3317,11 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'import-backup') { openFilePicker('backup-input', importBackupFile); return }
-  if (action === 'reset-all') {
-    if (!window.confirm('Erase ALL data and restore the starter wallets/budgets? This cannot be undone.')) return
-    store.resetAll()
-    toast('Everything reset')
-    render()
+  if (action === 'clear-app-data') { openModal('confirm-clear'); return }
+  if (action === 'confirm-clear') {
+    store.clearAll()
+    goBack()
+    toast('App data cleared')
     return
   }
 })
