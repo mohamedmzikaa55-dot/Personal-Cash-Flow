@@ -596,14 +596,14 @@ function walletCurrencyRowsHtml(wallet) {
     : (wallet.currency ? [{ code: wallet.currency, start: Number(wallet.foreign) || 0, include: true }] : [])
   if (!list.length) return '<p class="muted tight">No other currency yet. Add one to keep a balance in it.</p>'
   return list.map((c) => `
-    <div class="row2 wallet-currency-row" data-currency-row style="margin-top:8px">
-      <label>Currency<input name="cCurrency" list="wallet-currency-options" data-wc-code maxlength="12" value="${escapeHtml(c.code || '')}" placeholder="USD" /></label>
-      <label>Balance<input name="cAmount" type="number" step="0.01" data-wc-amount value="${Number(c.start) || 0}" /></label>
-      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+    <div class="wallet-currency-row" data-currency-row style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:8px">
+      <label style="flex:1 1 150px">Balance in another currency<input name="cAmount" type="number" step="0.01" data-wc-amount value="${Number(c.start) || 0}" /></label>
+      <label style="flex:1 1 130px">That currency<input name="cCurrency" list="wallet-currency-options" data-wc-code maxlength="12" value="${escapeHtml(c.code || '')}" placeholder="USD" /></label>
+      <label style="flex:0 0 auto;display:flex;align-items:center;gap:6px;color:var(--text);padding-bottom:11px">
         <input type="checkbox" name="cInclude" data-wc-include ${c.include !== false ? 'checked' : ''} style="width:auto" />
         <span>Add to total</span>
       </label>
-      <button type="button" class="icon-btn sm" data-action="wallet-remove-currency" title="Remove currency" aria-label="Remove ${escapeHtml(c.code || 'currency')}">${icon('trash')}</button>
+      <button type="button" class="icon-btn sm" data-action="wallet-remove-currency" title="Remove currency" aria-label="Remove ${escapeHtml(c.code || 'currency')}" style="margin-bottom:0">${icon('trash')}</button>
     </div>`).join('')
 }
 
