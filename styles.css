@@ -1827,6 +1827,31 @@ textarea::placeholder {
   border-radius: 13px;
 }
 
+/* Currency picker tucked into the amount box. Kept narrow so the number keeps
+   the room it needs on a phone. */
+.amount-field .amount-currency {
+  flex: 0 0 76px;
+  width: 76px;
+  min-width: 76px;
+  padding: 8px 20px 8px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  background-position: calc(100% - 12px) 21px, calc(100% - 7px) 21px;
+}
+
+/* The main-currency value under a foreign amount in a transaction row. */
+.item .amount .amount-main {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.amount-currency-note {
+  min-height: 16px;
+}
+
 /* ---------- calculator sheet ---------- */
 .calc {
   display: grid;

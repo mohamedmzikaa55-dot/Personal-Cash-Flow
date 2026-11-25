@@ -303,11 +303,32 @@ function normalizeSource(source) {
   return { id: source.id || uid('s'), name: str(source.name, 60) || 'Source' }
 }
 
+// An amount entered in another currency is kept twice: `amount` is what the
+// wallet actually moved (always in the app's main currency) and
+// `originalAmount` / `currency` / `rate` remember what the user typed, so the
+// editor and the lists can show "100 USD" while every total stays in main money.
+function moneyFields(rec) {
+  const currency = sanitizeCurrency(rec.currency)
+  const savedAmount = Math.abs(parseMoney(rec.amount))
+  const original = rec.originalAmount != null ? Math.abs(parseMoney(rec.originalAmount)) : savedAmount
+  const rate = currency ? (Number(rec.rate) > 0 ? Number(rec.rate) : 0) : 0
+  // `originalAmount` + `rate` are the source of truth; the main-currency amount
+  // is derived from them so an older/raw caller can never store a half-converted
+  // record. Without a rate the saved amount is kept as-is.
+  const amount = currency && rate > 0 && rec.originalAmount != null ? round2(original * rate) : savedAmount
+  return {
+    amount,
+    originalAmount: original,
+    currency,
+    rate
+  }
+}
+
 function baseRecord(rec) {
   return {
     id: rec.id || uid('t'),
     name: str(rec.name, 120) || 'Entry',
-    amount: Math.abs(parseMoney(rec.amount)),
+    ...moneyFields(rec),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     walletId: str(rec.walletId, 60),
@@ -381,10 +402,16 @@ function normalizeRecurrence(rec) {
 }
 
 function normalizeTransfer(rec) {
+  const money = moneyFields(rec)
+  const originalFee = rec.originalFee != null ? Math.abs(parseMoney(rec.originalFee)) : Math.abs(parseMoney(rec.fee))
+  const fee = money.currency && money.rate > 0 && rec.originalFee != null
+    ? round2(originalFee * money.rate)
+    : Math.abs(parseMoney(rec.fee))
   return {
     id: rec.id || uid('tr'),
-    amount: Math.abs(parseMoney(rec.amount)),
-    fee: Math.abs(parseMoney(rec.fee)),
+    ...money,
+    fee,
+    originalFee,
     fromId: str(rec.fromId, 60),
     toId: str(rec.toId, 60),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
@@ -441,7 +468,7 @@ function normalizeDebt(debt) {
     name: str(debt.name != null ? debt.name : debt.description, 120),
     person: str(debt.person, 80) || 'Someone',
     number: str(debt.number, 40),
-    amount: Math.abs(parseMoney(debt.amount)),
+    ...moneyFields(debt),
     direction,
     // A Collect points at the Lent it settles; a Return at the Borrow. The
     // Lent / Borrow itself carries no parent.
@@ -756,6 +783,15 @@ function rateCurrencies() {
   state.wallets.forEach((w) => {
     if (parseMoney(w.foreign) !== 0) add(currencyCode(w.currency))
   })
+  // A transaction saved in another currency keeps its own rate, but the rate is
+  // still offered in Settings so it can be edited or fetched again.
+  const addRecords = (list) => list.forEach((r) => {
+    if (parseMoney(r.originalAmount) !== 0) add(currencyCode(r.currency))
+  })
+  addRecords(state.incomes)
+  addRecords(state.expenses)
+  addRecords(state.transfers)
+  addRecords(state.debts)
   Object.keys(state.settings.rates || {}).forEach(add)
   return [...codes]
 }
@@ -773,6 +809,24 @@ function toMainCurrency(amount, currency) {
   const rate = currencyRate(from)
   if (rate <= 0) return null
   return round2(value * rate)
+}
+
+// Convert an amount the user typed in `currency` into main money, using a
+// freshly typed rate when the saved one is missing. Returns null when no rate
+// is known at all, so the sheet can ask for one instead of saving a wrong
+// number.
+function convertAmount(amount, currency, rateOverride) {
+  const value = Math.abs(parseMoney(amount))
+  const code = currencyCode(currency)
+  if (!code) return { amount: value, originalAmount: value, currency: '', rate: 0 }
+  const mainCode = currencyCode(state.settings.mainCurrency)
+  if (mainCode && code === mainCode) {
+    return { amount: value, originalAmount: value, currency: state.settings.mainCurrency, rate: 1 }
+  }
+  const typed = Number(rateOverride)
+  const rate = typed > 0 ? typed : currencyRate(code)
+  if (!(rate > 0)) return null
+  return { amount: round2(value * rate), originalAmount: value, currency: code, rate }
 }
 
 // ---------- debt linking ----------
@@ -1564,7 +1618,29 @@ export const store = {
   walletSpendableExcluding,
   walletTotals,
   toMainCurrency,
+  convertAmount,
   currencyCode,
+  // Every currency a transaction can be entered in, as unique ISO codes with
+  // the main currency first.
+  transactionCurrencyChoices() {
+    const seen = new Set()
+    const out = []
+    const add = (value) => {
+      const code = currencyCode(value)
+      if (code && !seen.has(code)) {
+        seen.add(code)
+        out.push(code)
+      }
+    }
+    add(state.settings.mainCurrency)
+    CURRENCY_CHOICES.forEach(add)
+    Object.keys(state.settings.rates || {}).forEach(add)
+    add(state.settings.secondaryCurrency)
+    // Keep an already-saved record's currency selectable even if it is no longer
+    // in the built-in list.
+    ;[...state.incomes, ...state.expenses, ...state.transfers, ...state.debts].forEach((r) => add(r.currency))
+    return out
+  },
   // Every currency the wallet form can offer: the built-in list plus the ones
   // configured in Settings, so a rate is always available for them.
   currencyChoices() {
@@ -1745,7 +1821,12 @@ export const store = {
       if (rec.repeatGroupId !== groupId || rec.date < fromDate) return
       const patch = { ...rec }
       if (fields.name !== undefined) patch.name = fields.name
-      if (fields.amount !== undefined) patch.amount = fields.amount
+      if (fields.amount !== undefined) {
+        patch.amount = fields.amount
+        patch.originalAmount = fields.originalAmount
+        patch.currency = fields.currency
+        patch.rate = fields.rate
+      }
       if (fields.time !== undefined) patch.time = fields.time
       if (fields.walletId !== undefined) patch.walletId = fields.walletId
       if (fields.note !== undefined) patch.note = fields.note

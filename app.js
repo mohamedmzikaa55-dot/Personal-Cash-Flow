@@ -172,6 +172,32 @@ function plainMoney(value) {
   return (Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// Whether a transaction was entered in a currency other than the app's main
+// one. Its `amount` is always main money; `originalAmount` keeps what was typed.
+function hasForeignAmount(rec) {
+  const code = store.currencyCode(rec && rec.currency)
+  return Boolean(code && code !== store.currencyCode(store.getSettings().mainCurrency) && Number(rec.originalAmount) > 0)
+}
+
+// The amount as the user entered it: "100.00 USD" for a foreign record, or the
+// usual main-money figure otherwise.
+function amountLabel(rec) {
+  return hasForeignAmount(rec) ? `${plainMoney(rec.originalAmount)} ${escapeHtml(rec.currency)}` : money(rec.amount)
+}
+
+// "≈ $4,850.00" under a foreign amount, so the main-currency value the wallet
+// and every total used is still visible.
+function amountMainNote(rec, sign) {
+  return hasForeignAmount(rec) ? ` ≈ ${money(sign ? Math.abs(rec.amount) : rec.amount)}` : ''
+}
+
+// A foreign amount's main-money value as a second line inside the amount cell.
+function amountMainLine(rec) {
+  return hasForeignAmount(rec)
+    ? `<span class="amount-main">≈ ${money(rec.amount)}</span>`
+    : ''
+}
+
 // The symbol an ISO code is shown as, so the Settings rate rows read "1 $ = 48.5 E£".
 const SYMBOL_BY_CODE = {
   USD: '$',
@@ -240,7 +266,7 @@ function repeatingScheduleRow(schedule) {
         <div class="meta">${escapeHtml(detail)} · ${upcoming.length} remaining${skipped ? ` · ${skipped} skipped` : ''}</div>
       </div>
       <div class="repeat-actions">
-        <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${money(next.amount)}</div>
+        <div class="amount ${isIncome ? 'pos' : 'neg'} mono">${isIncome ? '+' : '−'}${amountLabel(next)}${amountMainLine(next)}</div>
         <div class="row-actions">
           <button class="mini-btn" type="button" data-action="edit-transaction" data-kind="${kind}" data-id="${next.id}" aria-label="Edit schedule" title="Edit this schedule">${icon('edit')}</button>
           <button class="mini-btn" type="button" data-action="open-schedule" data-kind="${kind}" data-id="${escapeHtml(id)}" aria-label="Manage dates" title="Open calendar">${icon('cal')}</button>
@@ -739,10 +765,17 @@ function updateDebtAmountLimit() {
     return
   }
   const remaining = store.debtRemaining(parent.id, currentDebtFormId())
-  amount.max = remaining
+  // The amount box is in whichever currency is picked, so the cap follows it.
+  const currencySel = form.querySelector('select[data-amount-currency]')
+  const code = store.currencyCode(currencySel ? currencySel.value : '')
+  const mainCode = store.currencyCode(store.getSettings().mainCurrency)
+  const rate = code && code !== mainCode ? store.rateFor(code) : 1
+  const shown = rate > 0 ? Math.floor((remaining / rate) * 100) / 100 : remaining
+  amount.max = shown
   if (hint) {
     const word = direction === 'Collect' ? 'to collect' : 'to return'
-    hint.textContent = `${money(remaining)} still ${word} on this record — you can ${direction === 'Collect' ? 'collect' : 'return'} up to that.`
+    const extra = code && code !== mainCode && rate > 0 ? ` (${plainMoney(shown)} ${code})` : ''
+    hint.textContent = `${money(remaining)} still ${word} on this record${extra} — you can ${direction === 'Collect' ? 'collect' : 'return'} up to that.`
   }
 }
 
@@ -791,7 +824,7 @@ function debtTxRow(d) {
     : ''
   const bits = [
     `<span class="badge ${info.badge}">${info.label}</span>`,
-    `${info.sign === 'pos' ? '+' : '−'}${money(d.amount)}`,
+    `${info.sign === 'pos' ? '+' : '−'}${amountLabel(d)}${amountMainNote(d)}`,
     d.date ? `${store.formatDate(d.date)}${d.time ? ` · ${d.time}` : ''}` : '',
     d.expectedDate ? `due ${store.formatDate(d.expectedDate)}` : '',
     walletBit,
@@ -825,23 +858,23 @@ function txRow(tx) {
     avatar = `<span class="avatar income">${icon('up')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${money(tx.amount)}</div>`
+    amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar expense">${icon('down')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${money(tx.amount)}</div>`
+    amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'debt') {
     const info = debtTypeInfo(tx.direction)
     avatar = `<span class="avatar ${info.avatar}">${icon(info.glyph)}</span>`
     title = `${escapeHtml(tx.name || tx.person)} <span class="badge ${info.badge}">${info.label}</span>`
     meta = `${escapeHtml(tx.person)} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
-    amount = `<div class="amount ${info.sign} mono">${info.sign === 'pos' ? '+' : '-'}${money(tx.amount)}</div>`
+    amount = `<div class="amount ${info.sign} mono">${info.sign === 'pos' ? '+' : '-'}${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
     meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
-    amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${money(tx.amount)}</div>`
+    amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${amountLabel(tx)}${amountMainLine(tx)}</div>`
   }
   return `
     <article class="item" data-action="${tx.kind === 'debt' ? 'edit-debt' : 'edit-transaction'}" data-kind="${tx.kind}" data-id="${tx.id}">
@@ -869,7 +902,7 @@ function pendingRow(rec) {
         <span class="avatar transfer">${icon('transfer')}</span>
         <div class="body">
           <div class="title">${escapeHtml(store.walletName(rec.fromId) || '?')} → ${escapeHtml(store.walletName(rec.toId) || '?')}</div>
-          <div class="meta">${money(rec.amount)}${rec.fee ? ` + fee ${money(rec.fee)}` : ''} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}</div>
+          <div class="meta">${amountLabel(rec)}${rec.fee ? ` + fee ${hasForeignAmount(rec) ? `${plainMoney(rec.originalFee)} ${escapeHtml(rec.currency)}` : money(rec.fee)}` : ''}${amountMainNote(rec)} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}</div>
         </div>
         ${actions}
       </article>
@@ -877,7 +910,7 @@ function pendingRow(rec) {
   }
   const isIncome = rec.kind === 'income'
   const meta = [
-    `${isIncome ? '+' : '−'}${money(rec.amount)}`,
+    `${isIncome ? '+' : '−'}${amountLabel(rec)}${amountMainNote(rec)}`,
     isIncome ? (store.sourceName(rec.sourceId) || 'Income') : (store.categoryName(rec.categoryId) || 'Uncategorised'),
     store.walletName(rec.walletId) || 'No wallet',
     `${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}`
@@ -948,7 +981,7 @@ function txHaystack(t) {
   if (t.kind === 'expense') bits.push(store.categoryName(t.categoryId))
   if (t.kind === 'transfer') bits.push(store.walletName(t.fromId), store.walletName(t.toId))
   if (t.kind === 'debt') bits.push(t.person, t.number, t.direction)
-  bits.push(store.walletName(t.walletId), t.effDate || t.date, String(t.amount))
+  bits.push(store.walletName(t.walletId), t.effDate || t.date, String(t.amount), String(t.originalAmount || ''), t.currency || '')
   return bits.filter(Boolean).join(' ').toLowerCase()
 }
 
@@ -2069,7 +2102,7 @@ function scheduleModalHtml() {
             if (calSelected === cell.iso) cls.push('sel')
             return `<button class="${cls.join(' ')}" type="button" data-action="cal-select" data-date="${cell.iso}">
               <span class="cal-num">${cell.day}</span>
-              <i class="cal-amt">${money(rec.amount)}</i>
+              <i class="cal-amt">${amountLabel(rec)}</i>
             </button>`
           }).join('')}
         </div>
@@ -2078,7 +2111,7 @@ function scheduleModalHtml() {
         <div class="cal-detail">
           <div class="cal-detail-top">
             <b>${escapeHtml(store.formatDate(selected.date))}</b>
-            <span class="mono ${isIncome ? 'pos' : 'neg'}">${isIncome ? '+' : '−'}${money(selected.amount)}</span>
+            <span class="mono ${isIncome ? 'pos' : 'neg'}">${isIncome ? '+' : '−'}${amountLabel(selected)}</span>
             ${selected.skipped ? '<span class="badge gold">Skipped</span>' : ''}
             ${selected.excepted ? '<span class="badge">Edited</span>' : ''}
           </div>
@@ -2340,6 +2373,89 @@ function calcModalHtml() {
 
 // ---------- modal ----------
 
+// Amount box shared by income, expense, transfer and debt sheets: the number,
+// a currency picker (main currency first, and selected by default) and the
+// calculator. `rec` is the record being edited, if any.
+function amountFieldHtml(rec) {
+  const mainCode = store.currencyCode(store.getSettings().mainCurrency)
+  const choices = store.transactionCurrencyChoices()
+  const selected = store.currencyCode(rec && rec.currency) || mainCode
+  const entered = rec && Number(rec.originalAmount) > 0 ? Number(rec.originalAmount) : (rec && rec.amount ? Number(rec.amount) : '')
+  return `
+    <span class="amount-field">
+      <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${entered}" placeholder="0.00" />
+      <select name="currency" class="amount-currency" data-amount-currency data-saved-currency="${escapeHtml(store.currencyCode(rec && rec.currency))}" data-saved-rate="${rec && Number(rec.rate) > 0 ? Number(rec.rate) : ''}" aria-label="Amount currency">
+        ${choices.map((code) => `<option value="${escapeHtml(code)}" ${code === selected ? 'selected' : ''}>${escapeHtml(code)}</option>`).join('')}
+      </select>
+      <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
+    </span>`
+}
+
+// The line under the amount that explains the conversion, plus a rate box that
+// only appears when the chosen currency has no saved rate yet.
+function amountCurrencyExtraHtml() {
+  return `
+    <p class="muted tight amount-currency-note" data-amount-note style="margin-top:-2px"></p>
+    <label data-rate-wrap style="display:none"><span data-rate-label>Rate</span><input name="rate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="0.0000" /></label>`
+}
+
+function refreshAmountCurrencyHint(form) {
+  if (!form) return
+  const select = form.querySelector('select[data-amount-currency]')
+  const amountInput = form.querySelector('input[name="amount"]')
+  const note = form.querySelector('[data-amount-note]')
+  const rateWrap = form.querySelector('[data-rate-wrap]')
+  const rateInput = form.querySelector('input[name="rate"]')
+  const rateLabel = form.querySelector('[data-rate-label]')
+  if (!select || !note) return
+  const main = store.getSettings().mainCurrency
+  const mainCode = store.currencyCode(main)
+  const code = store.currencyCode(select.value) || mainCode
+  const amount = Math.abs(Number(String((amountInput && amountInput.value) || '').replace(',', '.')) || 0)
+  if (code === mainCode) {
+    if (rateWrap) rateWrap.style.display = 'none'
+    note.textContent = `Amount in ${main} — your main currency.`
+    return
+  }
+  let rate = store.rateFor(code)
+  const savedCode = select.dataset.savedCurrency || ''
+  const savedRate = Number(select.dataset.savedRate) || 0
+  // Editing a foreign record keeps the rate it was saved with, so changing only
+  // the note never re-values the amount. A new currency uses the current rate.
+  if (code === savedCode && savedRate > 0) rate = savedRate
+  const typed = rateInput ? Number(rateInput.value) : 0
+  if (!(rate > 0)) {
+    rate = typed > 0 ? typed : 0
+    if (rateWrap) rateWrap.style.display = ''
+    if (rateLabel) rateLabel.textContent = `Exchange rate — 1 ${code} = ? ${main}`
+  } else if (rateWrap) {
+    rateWrap.style.display = 'none'
+  }
+  note.textContent = rate > 0
+    ? `1 ${code} = ${rate} ${main} · ${plainMoney(amount)} ${code} ≈ ${store.formatMoney(amount * rate)}`
+    : `No rate saved for ${code} → ${main}. Enter today's rate below to convert this amount.`
+  if (form.dataset.form === 'debt') updateDebtAmountLimit()
+}
+
+function wireAmountCurrencyForm() {
+  const form = document.querySelector('form[data-form="income"], form[data-form="expense"], form[data-form="transfer"], form[data-form="debt"]')
+  if (!form) return
+  const select = form.querySelector('select[data-amount-currency]')
+  const amountInput = form.querySelector('input[name="amount"]')
+  const rateInput = form.querySelector('input[name="rate"]')
+  if (select) {
+    select.addEventListener('change', () => {
+      // A rate typed for one currency must not silently convert another.
+      const savedCode = select.dataset.savedCurrency || ''
+      if (rateInput && select.value !== savedCode) rateInput.value = ''
+      refreshAmountCurrencyHint(form)
+    })
+  }
+  if (amountInput) amountInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
+  if (rateInput) rateInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
+  refreshAmountCurrencyHint(form)
+}
+
 function renderModal() {
   if (!modal) return ''
 
@@ -2522,23 +2638,21 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Salary, refund…" /></label>
       <div class="row2">
-        <label>Amount
-          <span class="amount-field">
-            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
-            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
-          </span>
+        <label style="grid-column:1/-1">Amount
+          ${amountFieldHtml(r)}
         </label>
-        <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
+      ${amountCurrencyExtraHtml()}
       <div class="row2">
+        <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
-        <label>Repeat<select name="repeat" data-repeat>
+      </div>
+      <label>Repeat<select name="repeat" data-repeat>
           <option value="none" ${!r.repeat || r.repeat === 'none' ? 'selected' : ''}>One time</option>
           <option value="weekly" ${r.repeat === 'weekly' ? 'selected' : ''}>Every week</option>
           <option value="monthly" ${r.repeat === 'monthly' ? 'selected' : ''}>Every month</option>
           <option value="custom" ${r.repeat === 'custom' ? 'selected' : ''}>Custom (every N days)</option>
         </select></label>
-      </div>
       <div data-repeat-panel="weekly" style="display:none">
         <div class="muted tight" style="margin-bottom:4px">On these days:</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" ${weeklyDays.includes(i) ? 'checked' : ''} style="width:auto" /> ${d}</label>`).join('')}</div>
@@ -2570,23 +2684,21 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Groceries, rent…" /></label>
       <div class="row2">
-        <label>Amount
-          <span class="amount-field">
-            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
-            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
-          </span>
+        <label style="grid-column:1/-1">Amount
+          ${amountFieldHtml(r)}
         </label>
-        <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
       </div>
+      ${amountCurrencyExtraHtml()}
       <div class="row2">
+        <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
-        <label>Repeat<select name="repeat" data-repeat>
+      </div>
+      <label>Repeat<select name="repeat" data-repeat>
           <option value="none" ${!r.repeat || r.repeat === 'none' ? 'selected' : ''}>One time</option>
           <option value="weekly" ${r.repeat === 'weekly' ? 'selected' : ''}>Every week</option>
           <option value="monthly" ${r.repeat === 'monthly' ? 'selected' : ''}>Every month</option>
           <option value="custom" ${r.repeat === 'custom' ? 'selected' : ''}>Custom (every N days)</option>
         </select></label>
-      </div>
       <div data-repeat-panel="weekly" style="display:none">
         <div class="muted tight" style="margin-bottom:4px">On these days:</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" name="weekDay" value="${i}" ${weeklyDays.includes(i) ? 'checked' : ''} style="width:auto" /> ${d}</label>`).join('')}</div>
@@ -2616,19 +2728,19 @@ function renderModal() {
     title = `${isEdit ? 'Edit' : 'New'} transfer`
     body = `
       <div class="row2">
-        <label>Amount
-          <span class="amount-field">
-            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${r.amount ? Number(r.amount) : ''}" placeholder="0.00" />
-            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
-          </span>
+        <label style="grid-column:1/-1">Amount
+          ${amountFieldHtml(r)}
         </label>
+      </div>
+      ${amountCurrencyExtraHtml()}
+      <div class="row2">
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
+        <label>Fee (optional)<input name="fee" type="number" step="0.01" value="${hasForeignAmount(r) && Number(r.originalFee) > 0 ? Number(r.originalFee) : (r.fee ? Number(r.fee) : '')}" placeholder="0.00" /></label>
       </div>
       <div class="row2">
         <label>From${walletSelect(r.fromId, 'fromId')}</label>
         <label>To${walletSelect(r.toId, 'toId')}</label>
       </div>
-      <label>Fee (optional)<input name="fee" type="number" step="0.01" value="${r.fee ? Number(r.fee) : ''}" placeholder="0.00" /></label>
       <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
         <input type="checkbox" name="pending" ${r.pending ? 'checked' : ''} style="width:auto" /> Pending transfer — don't move money yet
       </label>
@@ -2663,16 +2775,14 @@ function renderModal() {
         <label>Number<input name="number" maxlength="40" value="${escapeHtml(d.number || '')}" placeholder="Phone or reference" /></label>
       </div>
       <div class="row2">
-        <label>Amount
-          <span class="amount-field">
-            <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${d.amount ? Number(d.amount) : ''}" placeholder="0.00" />
-            <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
-          </span>
+        <label style="grid-column:1/-1">Amount
+          ${amountFieldHtml(d)}
         </label>
-        <label>Type<select name="direction" data-debt-direction>
+      </div>
+      ${amountCurrencyExtraHtml()}
+      <label>Type<select name="direction" data-debt-direction>
           ${Object.keys(DEBT_TYPES).map((key) => `<option value="${key}" ${key === direction ? 'selected' : ''}>${key}</option>`).join('')}
         </select></label>
-      </div>
       <p class="muted tight" id="debt-type-hint" style="margin-top:-4px">${escapeHtml(debtTypeInfo(direction).hint)}</p>
       <div id="debt-parent-wrap" style="display:${linked ? '' : 'none'}">
         <label id="debt-parent-label">${direction === 'Return' ? 'Return against (Borrow)' : 'Collect from (Lent)'}<select name="parentId" id="debt-parent-select" data-debt-parent ${linked ? 'required' : ''}>
@@ -2789,6 +2899,7 @@ function render() {
     if (parentSel) parentSel.addEventListener('change', updateDebtAmountLimit)
     updateDebtAmountLimit()
   }
+  wireAmountCurrencyForm()
   scheduleDueRefresh()
 }
 
@@ -3339,6 +3450,28 @@ document.addEventListener('submit', (event) => {
   const data = new FormData(form)
   const get = (key) => String(data.get(key) || '').trim()
   const num = (key) => store.parseMoney(get(key))
+  // Amount + currency from a sheet, converted to the app's main currency. A
+  // foreign currency with no saved rate yet still gets one chance: the rate box
+  // in the sheet is read here and saved for next time.
+  const amountFields = () => {
+    const raw = Math.abs(store.parseMoney(get('amount')))
+    const code = store.currencyCode(get('currency'))
+    const mainCode = store.currencyCode(store.getSettings().mainCurrency)
+    if (!code || code === mainCode) {
+      return { amount: raw, originalAmount: raw, currency: mainCode, rate: 1 }
+    }
+    const select = form.querySelector('select[data-amount-currency]')
+    const savedCode = (select && select.dataset.savedCurrency) || ''
+    const savedRate = Number(select && select.dataset.savedRate) || 0
+    const typed = Number(String(data.get('rate') || '').replace(',', '.'))
+    // Keep a record's own rate while its currency is unchanged; a newly picked
+    // currency is converted with today's saved rate (or the one typed below).
+    const rateToUse = typed > 0 ? typed : (code === savedCode && savedRate > 0 ? savedRate : 0)
+    const info = store.convertAmount(raw, code, rateToUse)
+    if (!info) return null
+    if (typed > 0 && !(store.rateFor(code) > 0)) store.setRate(code, typed)
+    return info
+  }
   // Pending income / expense / transfer: re-ticking clears any earlier release,
   // and unticking releases it today — the day the money actually moves.
   const pendingFields = (kind) => {
@@ -3376,7 +3509,9 @@ document.addEventListener('submit', (event) => {
     else store.addGoal(fields)
     toast(id ? 'Goal updated' : 'Goal added')
   } else if (type === 'income') {
-    const fields = { name: get('name') || 'Income', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('income') }
+    const amountInfo = amountFields()
+    if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
+    const fields = { name: get('name') || 'Income', ...amountInfo, date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('income') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('income', id) : null
@@ -3388,7 +3523,9 @@ document.addEventListener('submit', (event) => {
     else store.addIncome(fields)
     toast(id ? 'Income updated' : (fields.pending ? 'Pending income added' : 'Income added'))
   } else if (type === 'expense') {
-    const fields = { name: get('name') || 'Expense', amount: num('amount'), date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('expense') }
+    const amountInfo = amountFields()
+    if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
+    const fields = { name: get('name') || 'Expense', ...amountInfo, date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('expense') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('expense', id) : null
@@ -3436,7 +3573,11 @@ document.addEventListener('submit', (event) => {
     const fromId = get('fromId')
     const toId = get('toId')
     if (!fromId || !toId || fromId === toId) { toast('Pick two different wallets'); return }
-    const fields = { amount: num('amount'), fee: num('fee'), fromId, toId, date: get('date'), note: get('note'), ...pendingFields('transfer') }
+    const amountInfo = amountFields()
+    if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
+    const rawFee = Math.abs(num('fee'))
+    const feeInfo = store.convertAmount(rawFee, amountInfo.currency, amountInfo.rate)
+    const fields = { ...amountInfo, fee: feeInfo ? feeInfo.amount : rawFee, originalFee: rawFee, fromId, toId, date: get('date'), note: get('note'), ...pendingFields('transfer') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (id) store.updateTransaction('transfer', id, fields)
     else store.addTransfer(fields)
@@ -3450,11 +3591,13 @@ document.addEventListener('submit', (event) => {
   } else if (type === 'debt') {
     const direction = get('direction')
     const linked = direction === 'Collect' || direction === 'Return'
+    const amountInfo = amountFields()
+    if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
     const fields = {
       name: get('name'),
       person: get('person'),
       number: get('number'),
-      amount: num('amount'),
+      ...amountInfo,
       direction,
       parentId: linked ? get('parentId') : '',
       excludeFromWallet: !linked && data.get('excludeFromWallet') === 'on',
