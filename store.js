@@ -264,7 +264,48 @@ function sanitizeCurrency(value) {
   return c
 }
 
+// One currency held by a wallet: its opening amount and whether it is converted
+// into the main currency and added to the wallet total. `include` defaults to
+// true so every wallet from an older backup keeps counting as before.
+function normalizeWalletCurrency(entry) {
+  const source = entry && typeof entry === 'object' ? entry : {}
+  return {
+    code: sanitizeCurrency(source.code != null ? source.code : source.currency),
+    start: parseMoney(source.start != null ? source.start : source.amount),
+    include: source.include !== false && source.addToTotal !== false
+  }
+}
+
+// A wallet may hold any number of currencies. The legacy `foreign` / `currency`
+// pair is kept as the first entry so old forms, imports and backups keep working;
+// its amount wins for that entry while a saved "include" checkbox is preserved.
+function normalizeWalletCurrencies(wallet) {
+  const out = []
+  const add = (code, start, include) => {
+    const clean = sanitizeCurrency(code)
+    if (!clean) return
+    const key = currencyCode(clean)
+    const found = out.find((c) => currencyCode(c.code) === key)
+    if (found) {
+      found.start = parseMoney(start)
+      return
+    }
+    out.push({ code: clean, start: parseMoney(start), include: include !== false })
+  }
+  if (Array.isArray(wallet.currencies)) {
+    wallet.currencies.forEach((entry) => {
+      const item = normalizeWalletCurrency(entry)
+      add(item.code, item.start, item.include)
+    })
+  }
+  const legacy = sanitizeCurrency(wallet.currency)
+  if (legacy) add(legacy, wallet.foreign, true)
+  return out
+}
+
 function normalizeWallet(wallet) {
+  const currencies = normalizeWalletCurrencies(wallet)
+  const first = currencies[0] || null
   return {
     id: wallet.id || uid('w'),
     name: str(wallet.name, 60) || 'Wallet',
@@ -275,9 +316,11 @@ function normalizeWallet(wallet) {
     start: parseMoney(wallet.start != null ? wallet.start : wallet.opening),
     // Extra amount the owner allows themselves to use from this wallet.
     allowable: Math.max(0, parseMoney(wallet.allowable)),
-    // A second balance kept in another currency, converted with the saved rate.
-    foreign: parseMoney(wallet.foreign),
-    currency: sanitizeCurrency(wallet.currency),
+    // Every balance held in another currency. `foreign` / `currency` are mirrors
+    // of the first entry and stay in place for older saved data.
+    currencies,
+    foreign: first ? first.start : parseMoney(wallet.foreign),
+    currency: first ? first.code : sanitizeCurrency(wallet.currency),
     // The wallet's own tile look. Empty means "derive it": the colour from the
     // wallet's name, the glyph from its type.
     color: hexColor(wallet.color),
@@ -522,6 +565,10 @@ function defaultState() {
       theme: 'dark',
       mainCurrency: 'EGP',
       secondaryCurrency: '$',
+      // Currencies the owner has typed in that are not in the built-in list.
+      // Keeping them here means a custom code stays selectable and rate-editable
+      // even after the wallet or transaction that first used it is deleted.
+      knownCurrencies: [],
       rates: {},
       exchangeRate: null,
       rateUpdatedAt: '',
@@ -564,6 +611,9 @@ function migrate(raw) {
     theme: raw.settings && raw.settings.theme === 'light' ? 'light' : 'dark',
     mainCurrency: str(raw.settings && raw.settings.mainCurrency, 12) || 'EGP',
     secondaryCurrency: str(raw.settings && raw.settings.secondaryCurrency, 12) || '$',
+    knownCurrencies: [...new Set((Array.isArray(raw.settings && raw.settings.knownCurrencies)
+      ? raw.settings.knownCurrencies : [])
+      .map((c) => currencyCode(c)).filter(Boolean))].slice(0, 60),
     rates: normalizeRates(raw.settings && raw.settings.rates),
     exchangeRate: Number(raw.settings && raw.settings.exchangeRate) > 0 ? Number(raw.settings.exchangeRate) : null,
     rateUpdatedAt: str(raw.settings && raw.settings.rateUpdatedAt, 40),
@@ -743,6 +793,28 @@ function ensureSource(name) {
   return created.id
 }
 
+// A transaction in a currency the wallet does not hold yet gives that wallet a
+// new (third, fourth, …) balance, marked to count towards the total. The code is
+// also remembered as a known currency so it stays selectable and rate-editable
+// even when no record uses it any more.
+function ensureWalletCurrency(walletId, currency) {
+  const code = currencyCode(currency)
+  if (!code || !walletId || code === currencyCode(state.settings.mainCurrency)) return false
+  const wallet = state.wallets.find((w) => w.id === walletId)
+  if (!wallet) return false
+  if (!Array.isArray(wallet.currencies)) wallet.currencies = []
+  let created = false
+  if (!wallet.currencies.some((c) => currencyCode(c.code) === code)) {
+    wallet.currencies.push({ code, start: 0, include: true })
+    created = true
+  }
+  if (!(state.settings.knownCurrencies || []).includes(code)) {
+    state.settings.knownCurrencies = [...(state.settings.knownCurrencies || []), code]
+    created = true
+  }
+  return created
+}
+
 // ---------- computed ----------
 
 // Rates can be small (1 EGP is a fraction of a cent), so they keep more
@@ -780,9 +852,12 @@ function rateCurrencies() {
     if (code && (!main || code !== main)) codes.add(code)
   }
   add(currencyCode(state.settings.secondaryCurrency))
+  // Every currency a wallet holds gets a rate row, even at zero: the owner can
+  // save the rate before the first income or expense arrives in it.
   state.wallets.forEach((w) => {
-    if (parseMoney(w.foreign) !== 0) add(currencyCode(w.currency))
+    walletCurrencies(w.id).forEach((c) => add(currencyCode(c.code)))
   })
+  ;(state.settings.knownCurrencies || []).forEach(add)
   // A transaction saved in another currency keeps its own rate, but the rate is
   // still offered in Settings so it can be edited or fetched again.
   const addRecords = (list) => list.forEach((r) => {
@@ -913,15 +988,61 @@ function walletBalance(id) {
   return round2(total)
 }
 
+// The currencies a wallet holds: the ones configured on it, plus any currency
+// an income/expense in that wallet used (so imported or hand-edited data never
+// hides a balance). Main-currency records are excluded — they are already in
+// walletBalance().
+function walletCurrencies(id) {
+  const wallet = state.wallets.find((w) => w.id === id)
+  if (!wallet) return []
+  const list = (Array.isArray(wallet.currencies) ? wallet.currencies : []).map((c) => ({ ...c }))
+  const seen = new Set(list.map((c) => currencyCode(c.code)))
+  const main = currencyCode(state.settings.mainCurrency)
+  const addFrom = (records) => records.forEach((r) => {
+    const code = currencyCode(r.currency)
+    if (!code || code === main || seen.has(code)) return
+    seen.add(code)
+    list.push({ code, start: 0, include: true })
+  })
+  addFrom(state.incomes.filter((r) => r.walletId === id))
+  addFrom(state.expenses.filter((r) => r.walletId === id))
+  return list
+}
+
+// The balance in one of a wallet's currencies: its opening amount plus every
+// counted income (+) / expense (−) typed in that currency. The same transactions
+// also move the main balance through their converted `amount` — both balances
+// change on purpose.
+function walletCurrencyBalance(id, currency) {
+  const wallet = state.wallets.find((w) => w.id === id)
+  if (!wallet) return 0
+  const code = currencyCode(currency)
+  if (!code || code === currencyCode(state.settings.mainCurrency)) return 0
+  const entry = walletCurrencies(id).find((c) => currencyCode(c.code) === code)
+  let total = entry ? parseMoney(entry.start) : 0
+  const move = (rec, sign) => {
+    if (rec.walletId !== id || currencyCode(rec.currency) !== code) return 0
+    if (!isDue(rec) || !isActive(rec) || !recordCounts(rec)) return 0
+    return sign * Math.abs(parseMoney(rec.originalAmount))
+  }
+  state.incomes.forEach((r) => { total += move(r, 1) })
+  state.expenses.forEach((r) => { total += move(r, -1) })
+  return round2(total)
+}
+
 // What the wallet is worth in the MAIN currency: the running balance, the amount
-// the owner allows themselves to use, and any second-currency balance at the
-// saved rate. A currency with no known rate is left out of the sum.
+// the owner allows themselves to use, and every other-currency balance whose
+// "Add to total" mark is on. A currency with no known rate is left out, and an
+// unmarked one is tracked but never converted into the total.
 function walletTotal(id) {
   const wallet = state.wallets.find((w) => w.id === id)
   if (!wallet) return 0
   let total = walletBalance(id) + Math.max(0, parseMoney(wallet.allowable))
-  const converted = toMainCurrency(wallet.foreign, wallet.currency)
-  if (converted !== null) total += converted
+  walletCurrencies(id).forEach((c) => {
+    if (c.include === false) return
+    const converted = toMainCurrency(walletCurrencyBalance(id, c.code), c.code)
+    if (converted !== null) total += converted
+  })
   return round2(total)
 }
 
@@ -940,9 +1061,9 @@ function walletSpendableExcluding(id, amount) {
 }
 
 // Per-wallet parts of the total, so screens can show what it is made of and
-// warn when a second-currency balance cannot be converted. Wallets marked
-// excluded stay out of every piece — they are summed separately so screens can
-// still say how much money is being left out.
+// warn when a currency cannot be converted. Wallets marked excluded stay out of
+// every piece — they are summed separately so screens can still say how much
+// money is being left out.
 function walletTotals() {
   const acc = { main: 0, allowable: 0, foreign: 0, unrated: 0, currencies: [], excluded: 0, excludedCount: 0 }
   const seen = {}
@@ -954,17 +1075,23 @@ function walletTotals() {
     }
     acc.main += walletBalance(w.id)
     acc.allowable += Math.max(0, parseMoney(w.allowable))
-    const code = currencyCode(w.currency)
-    if (code && parseMoney(w.foreign) !== 0) {
+    walletCurrencies(w.id).forEach((item) => {
+      const code = currencyCode(item.code)
+      const amount = walletCurrencyBalance(w.id, item.code)
+      if (!code || !amount) return
       if (!seen[code]) {
-        seen[code] = { code, amount: 0, main: 0, rated: true }
+        seen[code] = { code, amount: 0, main: 0, rated: true, included: false }
         acc.currencies.push(seen[code])
       }
-      seen[code].amount += parseMoney(w.foreign)
-      const converted = toMainCurrency(w.foreign, w.currency)
-      if (converted === null) { seen[code].rated = false; acc.unrated += 1 }
-      else seen[code].main += converted
-    }
+      const row = seen[code]
+      row.amount += amount
+      if (item.include !== false) {
+        row.included = true
+        const converted = toMainCurrency(amount, item.code)
+        if (converted === null) { row.rated = false; acc.unrated += 1 }
+        else row.main += converted
+      }
+    })
   })
   acc.currencies.forEach((c) => {
     c.amount = round2(c.amount)
@@ -1516,6 +1643,17 @@ export const store = {
     state.settings.secondaryCurrency = str(value, 12) || '$'
     save()
   },
+  // Register a currency code the built-in list does not know yet. Custom codes
+  // stay in Settings so a rate can be saved for them and they remain selectable.
+  addCurrency(value) {
+    const code = currencyCode(value)
+    if (!code) return ''
+    if (!(state.settings.knownCurrencies || []).includes(code)) {
+      state.settings.knownCurrencies = [...(state.settings.knownCurrencies || []), code]
+      save()
+    }
+    return code
+  },
   // Typed by hand when the online rate cannot be fetched — wallet balances in
   // another currency are converted with it. Anything invalid is ignored so a
   // stray keystroke can never wipe a working rate.
@@ -1613,6 +1751,8 @@ export const store = {
   },
   walletName,
   walletBalance,
+  walletCurrencies,
+  walletCurrencyBalance,
   walletTotal,
   walletSpendable,
   walletSpendableExcluding,
@@ -1634,6 +1774,7 @@ export const store = {
     }
     add(state.settings.mainCurrency)
     CURRENCY_CHOICES.forEach(add)
+    ;(state.settings.knownCurrencies || []).forEach(add)
     Object.keys(state.settings.rates || {}).forEach(add)
     add(state.settings.secondaryCurrency)
     // Keep an already-saved record's currency selectable even if it is no longer
@@ -1647,7 +1788,7 @@ export const store = {
     const extra = [
       state.settings.mainCurrency,
       state.settings.secondaryCurrency,
-      ...rateCurrencies().map((code) => {
+      ...[...(state.settings.knownCurrencies || []), ...rateCurrencies()].map((code) => {
         const symbol = Object.keys(CODE_BY_SYMBOL).find((key) => CODE_BY_SYMBOL[key] === code)
         return symbol || code
       })
@@ -1664,7 +1805,15 @@ export const store = {
   updateWallet(id, fields) {
     const wallet = state.wallets.find((w) => w.id === id)
     if (!wallet) return
-    Object.assign(wallet, normalizeWallet({ ...wallet, ...fields, id }))
+    const patch = { ...fields, id }
+    // Keep the mirrors in step with the first currency row so an old caller that
+    // only writes `foreign` / `currency` cannot resurrect a stale balance.
+    if (Array.isArray(fields.currencies) && fields.currencies.length) {
+      const first = normalizeWalletCurrency(fields.currencies[0])
+      patch.foreign = first.start
+      patch.currency = first.code
+    }
+    Object.assign(wallet, normalizeWallet({ ...wallet, ...patch }))
     save()
   },
   removeWallet(id) {
@@ -1785,6 +1934,7 @@ export const store = {
     const repeatGroupId = fields.repeat && fields.repeat !== 'none' ? uid('rp') : ''
     const made = dates.map((date) => normalizeIncome({ ...fields, repeatGroupId, date, name: fields.name || sourceName(fields.sourceId) || 'Income' }))
     state.incomes.push(...made)
+    made.forEach((rec) => ensureWalletCurrency(rec.walletId, rec.currency))
     save()
     return made[0]
   },
@@ -1793,6 +1943,7 @@ export const store = {
     const repeatGroupId = fields.repeat && fields.repeat !== 'none' ? uid('rp') : ''
     const made = dates.map((date) => normalizeExpense({ ...fields, repeatGroupId, date, name: fields.name || categoryName(fields.categoryId) || 'Expense' }))
     state.expenses.push(...made)
+    made.forEach((rec) => ensureWalletCurrency(rec.walletId, rec.currency))
     save()
     return made[0]
   },
@@ -1809,6 +1960,7 @@ export const store = {
     else if (kind === 'expense') Object.assign(target, normalizeExpense({ ...target, ...fields, id }))
     else Object.assign(target, normalizeTransfer({ ...target, ...fields, id }))
     if ((kind === 'income' || kind === 'expense') && target.repeatGroupId && target.repeat !== 'none') target.excepted = true
+    if (kind === 'income' || kind === 'expense') ensureWalletCurrency(target.walletId, target.currency)
     save()
   },
   updateSeries(kind, id, fields) {
@@ -1834,6 +1986,7 @@ export const store = {
       if (kind === 'expense' && fields.categoryId !== undefined) patch.categoryId = fields.categoryId
       patch.excepted = false
       Object.assign(rec, kind === 'income' ? normalizeIncome(patch) : normalizeExpense(patch))
+      ensureWalletCurrency(rec.walletId, rec.currency)
     })
     save()
   },

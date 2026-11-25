@@ -546,24 +546,37 @@ function walletAvatar(wallet) {
   return `<span class="avatar ${frozen ? 'frozen' : ''}" style="background:${background};color:${color}">${walletIcon(wallet)}</span>`
 }
 
-// Explain what a wallet's second-currency balance is worth in the main
-// currency — and say so plainly when no rate is known for it.
+// Explain what each of a wallet's other-currency balances is worth in the main
+// currency — and say so plainly when its mark is off or no rate is known.
 function walletForeignHint(wallet) {
-  const settings = store.getSettings()
-  const amount = Number(wallet.foreign) || 0
-  const currency = wallet.currency || ''
-  const main = settings.mainCurrency
-  if (!amount) return `Add a balance in another currency to have it counted in the wallet total${currency ? '' : '.'}`
-  if (!currency) return `${plainMoney(amount)} is counted as ${escapeHtml(main)} — pick a currency above to convert it instead.`
-  if (currency === main || store.currencyCode(currency) === store.currencyCode(main)) {
-    return `${plainMoney(amount)} ${escapeHtml(currency)} is already your main currency.`
-  }
-  const rate = store.rateFor(currency)
-  const converted = store.toMainCurrency(amount, currency)
-  if (converted === null) {
-    return `No rate saved for ${escapeHtml(currency)} → ${escapeHtml(main)}, so it is left out of the total. Set it under Settings → Currency.`
-  }
-  return `${plainMoney(amount)} ${escapeHtml(currency)} ≈ ${money(converted)} ${escapeHtml(main)} (1 ${escapeHtml(currency)} = ${rate} ${escapeHtml(main)}), counted in the wallet total.`
+  const main = store.getSettings().mainCurrency
+  const list = Array.isArray(wallet.currencies) && wallet.currencies.length
+    ? wallet.currencies
+    : (wallet.currency ? [{ code: wallet.currency, start: Number(wallet.foreign) || 0, include: true }] : [])
+  if (!list.length) return 'Add a balance in another currency to have it counted in the wallet total.'
+  return list.map((entry) => {
+    const amount = Number(entry.start) || 0
+    const currency = entry.code || ''
+    const mark = entry.include === false ? ' — not added to the wallet total' : ', counted in the wallet total'
+    if (!currency) return `A balance with no currency is counted as ${escapeHtml(main)}.`
+    if (store.currencyCode(currency) === store.currencyCode(main)) {
+      return `${plainMoney(amount)} ${escapeHtml(currency)} is already your main currency${mark}.`
+    }
+    const converted = store.toMainCurrency(amount, currency)
+    if (converted === null) {
+      return `No rate saved for ${escapeHtml(currency)} → ${escapeHtml(main)}, so it is left out of the total${mark}.`
+    }
+    return `${plainMoney(amount)} ${escapeHtml(currency)} ≈ ${money(converted)} ${escapeHtml(main)} (1 ${escapeHtml(currency)} = ${store.rateFor(currency)})${mark}.`
+  }).join(' ')
+}
+
+// Rows currently in the wallet form, including ones just added by the user.
+function collectWalletCurrencyRows(form) {
+  return [...form.querySelectorAll('[data-currency-row]')].map((row) => ({
+    code: (row.querySelector('[data-wc-code]') || {}).value || '',
+    start: Number((row.querySelector('[data-wc-amount]') || {}).value) || 0,
+    include: (row.querySelector('[data-wc-include]') || {}).checked !== false
+  }))
 }
 
 // Live version used while the wallet form is being filled in.
@@ -572,28 +585,51 @@ function refreshWalletForeignHint() {
   if (!hint) return
   const form = hint.closest('form')
   if (!form) return
-  const foreign = form.querySelector('input[name="foreign"]')
-  const currency = form.querySelector('select[name="currency"]')
-  hint.innerHTML = walletForeignHint({
-    foreign: foreign ? Number(foreign.value) || 0 : 0,
-    currency: currency ? currency.value : ''
-  })
+  hint.innerHTML = walletForeignHint({ currencies: collectWalletCurrencyRows(form) })
+}
+
+// One editable currency row in the wallet form. A currency code may be typed
+// that is not in the list — saving the wallet creates it.
+function walletCurrencyRowsHtml(wallet) {
+  const list = Array.isArray(wallet.currencies) && wallet.currencies.length
+    ? wallet.currencies
+    : (wallet.currency ? [{ code: wallet.currency, start: Number(wallet.foreign) || 0, include: true }] : [])
+  if (!list.length) return '<p class="muted tight">No other currency yet. Add one to keep a balance in it.</p>'
+  return list.map((c) => `
+    <div class="row2 wallet-currency-row" data-currency-row style="margin-top:8px">
+      <label>Currency<input name="cCurrency" list="wallet-currency-options" data-wc-code maxlength="12" value="${escapeHtml(c.code || '')}" placeholder="USD" /></label>
+      <label>Balance<input name="cAmount" type="number" step="0.01" data-wc-amount value="${Number(c.start) || 0}" /></label>
+      <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
+        <input type="checkbox" name="cInclude" data-wc-include ${c.include !== false ? 'checked' : ''} style="width:auto" />
+        <span>Add to total</span>
+      </label>
+      <button type="button" class="icon-btn sm" data-action="wallet-remove-currency" title="Remove currency" aria-label="Remove ${escapeHtml(c.code || 'currency')}">${icon('trash')}</button>
+    </div>`).join('')
 }
 
 // Wallet total split into the pieces the totals are built from.
 function walletBreakdown(wallet) {
-  const settings = store.getSettings()
-  const balance = store.walletBalance(wallet.id)
-  const allowable = Math.max(0, Number(wallet.allowable) || 0)
-  const converted = store.toMainCurrency(wallet.foreign, wallet.currency)
+  const currencies = store.walletCurrencies(wallet.id).map((c) => {
+    const amount = store.walletCurrencyBalance(wallet.id, c.code)
+    return {
+      code: c.code,
+      amount,
+      include: c.include !== false,
+      rate: store.rateFor(c.code),
+      converted: store.toMainCurrency(amount, c.code)
+    }
+  })
+  const first = currencies[0] || { code: '', amount: 0, include: true, rate: 0, converted: 0 }
   return {
-    balance,
-    allowable,
+    balance: store.walletBalance(wallet.id),
+    allowable: Math.max(0, Number(wallet.allowable) || 0),
     spendable: store.walletSpendable(wallet.id),
-    foreign: Number(wallet.foreign) || 0,
-    currency: wallet.currency || '',
-    rate: store.rateFor(wallet.currency),
-    converted,
+    currencies,
+    // Mirrors of the first currency, kept for older call sites.
+    foreign: first.amount,
+    currency: first.code,
+    rate: first.rate,
+    converted: first.converted,
     total: store.walletTotal(wallet.id)
   }
 }
@@ -601,11 +637,12 @@ function walletBreakdown(wallet) {
 function walletBreakdownText(parts) {
   const bits = [`Start + moves ${money(parts.balance)}`]
   if (parts.allowable) bits.push(`allowable ${money(parts.allowable)}`)
-  if (parts.foreign) {
-    bits.push(parts.converted === null
-      ? `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} (no rate)`
-      : `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} ≈ ${money(parts.converted)}`)
-  }
+  parts.currencies.forEach((c) => {
+    if (!c.amount) return
+    const label = `${plainMoney(c.amount)} ${escapeHtml(c.code)}`
+    if (c.include === false) bits.push(`${label} (not in total)`)
+    else bits.push(c.converted === null ? `${label} (no rate)` : `${label} ≈ ${money(c.converted)}`)
+  })
   return bits.join(' · ')
 }
 
@@ -620,7 +657,8 @@ function walletsTotalsLine(totals) {
   if (totals.allowable) bits.push(`allowable ${money(totals.allowable)}`)
   totals.currencies.forEach((c) => {
     const label = currencyLabel(c.code)
-    bits.push(c.rated
+    if (!c.included) bits.push(`${label} ${plainMoney(c.amount)} (not in total)`)
+    else bits.push(c.rated
       ? `${label} ${plainMoney(c.amount)} ≈ ${money(c.main)}`
       : `${label} ${plainMoney(c.amount)} (no rate)`)
   })
@@ -636,7 +674,7 @@ function walletRow(wallet) {
       ${walletAvatar(wallet)}
       <div class="body">
         <div class="title">${escapeHtml(wallet.name)}</div>
-        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${wallet.excluded ? '<span class="badge">Excluded</span>' : ''}${escapeHtml(wallet.type)}${parts.foreign && parts.currency ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}` : ''}</div>
+        <div class="meta"><span class="badge ${wallet.status === 'Freezed' ? 'red' : 'green'}">${wallet.status}</span>${wallet.excluded ? '<span class="badge">Excluded</span>' : ''}${escapeHtml(wallet.type)}${parts.currencies.filter((c) => c.amount).map((c) => ` · ${escapeHtml(c.code)} ${plainMoney(c.amount)}${c.include === false ? ' (not in total)' : ''}`).join('')}</div>
         <div class="meta">${walletBreakdownText(parts)}</div>
       </div>
       <div class="amount ${parts.total < 0 ? 'neg' : ''} mono">${money(parts.total)}</div>
@@ -766,7 +804,7 @@ function updateDebtAmountLimit() {
   }
   const remaining = store.debtRemaining(parent.id, currentDebtFormId())
   // The amount box is in whichever currency is picked, so the cap follows it.
-  const currencySel = form.querySelector('select[data-amount-currency]')
+  const currencySel = form.querySelector('input[data-amount-currency]')
   const code = store.currencyCode(currencySel ? currencySel.value : '')
   const mainCode = store.currencyCode(store.getSettings().mainCurrency)
   const rate = code && code !== mainCode ? store.rateFor(code) : 1
@@ -1380,11 +1418,14 @@ function walletDetailRow(wallet, index, total) {
   const expense = monthTx.filter((r) => r.kind === 'expense').reduce((s, r) => s + r.amount, 0)
   const note = []
   if (income || expense) note.push(`this month +${money(income)} / −${money(expense)}`)
-  if (parts.foreign && parts.currency) {
-    note.push(parts.converted === null
-      ? `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} (no rate)`
-      : `${plainMoney(parts.foreign)} ${escapeHtml(parts.currency)} ≈ ${money(parts.converted)}`)
-  }
+  parts.currencies.forEach((c) => {
+    if (!c.amount) return
+    note.push(c.include === false
+      ? `${plainMoney(c.amount)} ${escapeHtml(c.code)} (not in total)`
+      : (c.converted === null
+        ? `${plainMoney(c.amount)} ${escapeHtml(c.code)} (no rate)`
+        : `${plainMoney(c.amount)} ${escapeHtml(c.code)} ≈ ${money(c.converted)}`))
+  })
   return `
     <article class="wallet-card" style="${walletCardStyle(wallet)}" data-action="open-wallet" data-id="${wallet.id}">
       <span class="wallet-tile">${walletIcon(wallet)}</span>
@@ -1441,7 +1482,7 @@ function renderWalletDetail() {
         <div>
           <span class="label">Total in ${escapeHtml(store.getSettings().mainCurrency)}</span>
           <div class="value mono" style="font-size:34px">${moneyPreview(parts.total, `wallet-${wallet.id}`)}</div>
-          <div class="sub">Balance ${money(parts.balance)}${parts.allowable ? ` · allowable ${money(parts.allowable)}` : ''}${parts.foreign ? ` · ${escapeHtml(parts.currency)} ${plainMoney(parts.foreign)}${parts.converted === null ? ' (no rate)' : ` ≈ ${money(parts.converted)}`}` : ''}</div>
+          <div class="sub">Balance ${money(parts.balance)}${parts.allowable ? ` · allowable ${money(parts.allowable)}` : ''}${parts.currencies.filter((c) => c.amount).map((c) => ` · ${escapeHtml(c.code)} ${plainMoney(c.amount)}${c.include === false ? ' (not in total)' : (c.converted === null ? ' (no rate)' : ` ≈ ${money(c.converted)}`)}`).join('')}</div>
           <div class="sub" style="margin-top:4px">You can spend up to ${money(parts.spendable)} from this wallet</div>
         </div>
         <span class="pill ${wallet.status === 'Freezed' ? 'neg' : 'pos'}">${wallet.status}</span>
@@ -1457,11 +1498,12 @@ function renderWalletDetail() {
         <div class="stat"><span class="muted">Allowable</span><b class="mono">${money(parts.allowable)}</b></div>
         <div class="stat"><span class="muted">Spendable</span><b class="mono">${money(parts.spendable)}</b></div>
       </div>
-      <div class="stat-grid" style="margin-top:10px">
-        <div class="stat"><span class="muted">${parts.currency ? escapeHtml(parts.currency) : 'Other currency'}</span><b class="mono">${plainMoney(parts.foreign)}</b></div>
-        <div class="stat"><span class="muted">Worth in ${escapeHtml(store.getSettings().mainCurrency)}</span><b class="mono">${parts.foreign ? (parts.converted === null ? 'no rate' : money(parts.converted)) : '—'}</b></div>
-        <div class="stat"><span class="muted">Rate</span><b class="mono">${parts.foreign && parts.currency && parts.rate ? `1 ${escapeHtml(parts.currency)} = ${parts.rate}` : '—'}</b></div>
-      </div>
+      ${parts.currencies.length ? `<div class="stat-grid" style="margin-top:10px">
+        ${parts.currencies.map((c) => `
+          <div class="stat"><span class="muted">${escapeHtml(c.code)} balance${c.include === false ? ' (not in total)' : ''}</span><b class="mono">${plainMoney(c.amount)}</b></div>
+          <div class="stat"><span class="muted">Worth in ${escapeHtml(store.getSettings().mainCurrency)}</span><b class="mono">${c.include === false ? '—' : (c.converted === null ? 'no rate' : money(c.converted))}</b></div>
+          <div class="stat"><span class="muted">Rate</span><b class="mono">${c.rate ? `1 ${escapeHtml(c.code)} = ${c.rate}` : '—'}</b></div>`).join('')}
+      </div>` : ''}
       ${parts.spendable < 0 ? `<p class="goal-alert" style="margin-top:12px">${icon('warn')}<span>Spending has passed what this wallet allows</span></p>` : ''}
     </section>
 
@@ -2384,9 +2426,8 @@ function amountFieldHtml(rec) {
   return `
     <span class="amount-field">
       <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${entered}" placeholder="0.00" />
-      <select name="currency" class="amount-currency" data-amount-currency data-saved-currency="${escapeHtml(store.currencyCode(rec && rec.currency))}" data-saved-rate="${rec && Number(rec.rate) > 0 ? Number(rec.rate) : ''}" aria-label="Amount currency">
-        ${choices.map((code) => `<option value="${escapeHtml(code)}" ${code === selected ? 'selected' : ''}>${escapeHtml(code)}</option>`).join('')}
-      </select>
+      <input name="currency" class="amount-currency" data-amount-currency list="tx-currency-options" data-saved-currency="${escapeHtml(store.currencyCode(rec && rec.currency))}" data-saved-rate="${rec && Number(rec.rate) > 0 ? Number(rec.rate) : ''}" value="${escapeHtml(selected)}" maxlength="12" aria-label="Amount currency" />
+      <datalist id="tx-currency-options">${choices.map((code) => `<option value="${escapeHtml(code)}"></option>`).join('')}</datalist>
       <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
     </span>`
 }
@@ -2401,7 +2442,7 @@ function amountCurrencyExtraHtml() {
 
 function refreshAmountCurrencyHint(form) {
   if (!form) return
-  const select = form.querySelector('select[data-amount-currency]')
+  const select = form.querySelector('input[data-amount-currency]')
   const amountInput = form.querySelector('input[name="amount"]')
   const note = form.querySelector('[data-amount-note]')
   const rateWrap = form.querySelector('[data-rate-wrap]')
@@ -2434,22 +2475,27 @@ function refreshAmountCurrencyHint(form) {
   note.textContent = rate > 0
     ? `1 ${code} = ${rate} ${main} · ${plainMoney(amount)} ${code} ≈ ${store.formatMoney(amount * rate)}`
     : `No rate saved for ${code} → ${main}. Enter today's rate below to convert this amount.`
+  if (form.dataset.form === 'income' || form.dataset.form === 'expense') {
+    note.textContent += ` The ${code} balance of the chosen wallet moves too.`
+  }
   if (form.dataset.form === 'debt') updateDebtAmountLimit()
 }
 
 function wireAmountCurrencyForm() {
   const form = document.querySelector('form[data-form="income"], form[data-form="expense"], form[data-form="transfer"], form[data-form="debt"]')
   if (!form) return
-  const select = form.querySelector('select[data-amount-currency]')
+  const select = form.querySelector('input[data-amount-currency]')
   const amountInput = form.querySelector('input[name="amount"]')
   const rateInput = form.querySelector('input[name="rate"]')
   if (select) {
-    select.addEventListener('change', () => {
+    const currencyChanged = () => {
       // A rate typed for one currency must not silently convert another.
       const savedCode = select.dataset.savedCurrency || ''
       if (rateInput && select.value !== savedCode) rateInput.value = ''
       refreshAmountCurrencyHint(form)
-    })
+    }
+    select.addEventListener('change', currencyChanged)
+    select.addEventListener('input', currencyChanged)
   }
   if (amountInput) amountInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
   if (rateInput) rateInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
@@ -2533,7 +2579,6 @@ function renderModal() {
   if (modal === 'wallet') {
     const w = modalPayload || {}
     const currencies = store.currencyChoices()
-    const hasCurrency = w.currency && currencies.includes(w.currency) ? w.currency : ''
     title = `${isEdit ? 'Edit' : 'New'} wallet`
     body = `
       <label>Wallet name<input name="name" required maxlength="60" value="${escapeHtml(w.name || '')}" placeholder="Cash, Visa, PayPal…" /></label>
@@ -2546,15 +2591,16 @@ function renderModal() {
         <label>Allowable balance<input name="allowable" type="number" step="0.01" min="0" value="${Number(w.allowable) || 0}" /></label>
       </div>
       <p class="muted tight" style="margin-top:-4px">Start (main) is what the wallet began with in your main currency; allowable is the extra amount you allow yourself to use from it.</p>
-      <div class="row2">
-        <label>Balance in another currency<input name="foreign" type="number" step="0.01" value="${Number(w.foreign) || 0}" /></label>
-        <label>That currency<select name="currency" data-currency>
-          <option value="">— None —</option>
-          ${currencies.map((c) => `<option value="${escapeHtml(c)}" ${c === hasCurrency ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-          ${w.currency && !currencies.includes(w.currency) ? `<option value="${escapeHtml(w.currency)}" selected>${escapeHtml(w.currency)} (no rate)</option>` : ''}
-        </select></label>
+      <div class="seg-field">
+        <span class="seg-label">Currencies in this wallet</span>
+        <div id="wallet-currency-rows">${walletCurrencyRowsHtml(w)}</div>
+        <datalist id="wallet-currency-options">
+          ${currencies.map((c) => `<option value="${escapeHtml(c)}"></option>`).join('')}
+        </datalist>
+        <button type="button" class="ghost-btn compact" data-action="wallet-add-currency" style="margin-top:8px">+ Add currency</button>
+        <p class="muted tight" id="wallet-foreign-hint" style="margin-top:8px">${walletForeignHint(w)}</p>
+        <p class="muted tight" style="margin-top:-2px">Tick “Add to total” to convert a balance into ${escapeHtml(store.getSettings().mainCurrency)} and include it in the wallet total. Unticked balances are still tracked here but left out. Type a code that is not in the list to create a new currency.</p>
       </div>
-      <p class="muted tight" id="wallet-foreign-hint" style="margin-top:-4px">${walletForeignHint(w)}</p>
       <label class="row2" style="grid-template-columns:auto 1fr;align-items:center;color:var(--text)">
         <input type="checkbox" name="excluded" ${w.excluded ? 'checked' : ''} style="width:auto" />
         <span>Exclude from total balance</span>
@@ -2872,13 +2918,14 @@ function render() {
     patchTxView()
   })
   mountCounters()
-  // The wallet form recalculates its second-currency hint as it is filled in.
+  // The wallet form recalculates its currency hints as rows are edited or added.
   const walletForm = document.querySelector('form[data-form="wallet"]')
   if (walletForm) {
-    const hintTargets = walletForm.querySelectorAll('input[name="foreign"], select[name="currency"]')
-    hintTargets.forEach((field) => field.addEventListener('input', refreshWalletForeignHint))
-    const currencyField = walletForm.querySelector('select[name="currency"]')
-    if (currencyField) currencyField.addEventListener('change', refreshWalletForeignHint)
+    const rowsWrap = walletForm.querySelector('#wallet-currency-rows')
+    if (rowsWrap) {
+      rowsWrap.addEventListener('input', refreshWalletForeignHint)
+      rowsWrap.addEventListener('change', refreshWalletForeignHint)
+    }
     // A custom colour from the native picker takes over from the swatches.
     const colorField = walletForm.querySelector('input[data-wallet-color]')
     if (colorField) colorField.addEventListener('input', () => {
@@ -3020,6 +3067,23 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'set-currency') { store.setCurrency(actionEl.dataset.value); render(); return }
+  if (action === 'wallet-add-currency') {
+    const form = actionEl.closest('form')
+    const wrap = form && form.querySelector('#wallet-currency-rows')
+    if (!wrap) return
+    wrap.insertAdjacentHTML('beforeend', walletCurrencyRowsHtml({ currencies: [{ code: '', start: 0, include: true }] }))
+    const added = wrap.querySelector('[data-currency-row]:last-child [data-wc-code]')
+    if (added) added.focus()
+    refreshWalletForeignHint()
+    return
+  }
+  if (action === 'wallet-remove-currency') {
+    const row = actionEl.closest('[data-currency-row]')
+    if (!row) return
+    row.remove()
+    refreshWalletForeignHint()
+    return
+  }
   if (action === 'wallet-color' || action === 'wallet-auto-color') {
     const row = actionEl.closest('.swatch-row')
     if (!row) return
@@ -3460,13 +3524,15 @@ document.addEventListener('submit', (event) => {
     if (!code || code === mainCode) {
       return { amount: raw, originalAmount: raw, currency: mainCode, rate: 1 }
     }
-    const select = form.querySelector('select[data-amount-currency]')
+    const select = form.querySelector('input[data-amount-currency]')
     const savedCode = (select && select.dataset.savedCurrency) || ''
     const savedRate = Number(select && select.dataset.savedRate) || 0
     const typed = Number(String(data.get('rate') || '').replace(',', '.'))
     // Keep a record's own rate while its currency is unchanged; a newly picked
     // currency is converted with today's saved rate (or the one typed below).
     const rateToUse = typed > 0 ? typed : (code === savedCode && savedRate > 0 ? savedRate : 0)
+    // A code typed in the sheet that the app has never seen becomes a currency.
+    store.addCurrency(code)
     const info = store.convertAmount(raw, code, rateToUse)
     if (!info) return null
     if (typed > 0 && !(store.rateFor(code) > 0)) store.setRate(code, typed)
@@ -3484,7 +3550,17 @@ document.addEventListener('submit', (event) => {
   }
 
   if (type === 'wallet') {
-    const fields = { name: get('name'), type: get('type'), status: get('status'), start: num('start'), allowable: num('allowable'), foreign: num('foreign'), currency: get('currency'), color: get('color'), icon: get('icon'), excluded: data.get('excluded') === 'on' }
+    const currencies = collectWalletCurrencyRows(form)
+    // A typed code that the app does not know yet becomes a real currency, so a
+    // rate can be saved for it and it stays selectable in transaction sheets.
+    currencies.forEach((c) => { if (c.code) store.addCurrency(c.code) })
+    const first = currencies[0] || { code: '', start: 0 }
+    const fields = {
+      name: get('name'), type: get('type'), status: get('status'),
+      start: num('start'), allowable: num('allowable'),
+      currencies, foreign: first.start, currency: first.code,
+      color: get('color'), icon: get('icon'), excluded: data.get('excluded') === 'on'
+    }
     if (!fields.name) return
     if (id) store.updateWallet(id, fields)
     else store.addWallet(fields)

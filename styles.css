@@ -1839,6 +1839,13 @@ textarea::placeholder {
   background-position: calc(100% - 12px) 21px, calc(100% - 7px) 21px;
 }
 
+/* The currency box is a text input with a datalist, so a new code can be typed. */
+.amount-field input.amount-currency {
+  padding: 8px;
+  text-transform: uppercase;
+  background-position: initial;
+}
+
 /* The main-currency value under a foreign amount in a transaction row. */
 .item .amount .amount-main {
   display: block;
