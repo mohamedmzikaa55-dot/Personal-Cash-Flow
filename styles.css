@@ -1827,23 +1827,32 @@ textarea::placeholder {
   border-radius: 13px;
 }
 
-/* Currency picker tucked into the amount box. Kept narrow so the number keeps
-   the room it needs on a phone. */
+/* Currency picker tucked into the amount box. A real <select> is used so the
+   list always opens on phones; the option text also shows the symbol. */
 .amount-field .amount-currency {
-  flex: 0 0 76px;
-  width: 76px;
-  min-width: 76px;
-  padding: 8px 20px 8px 8px;
+  flex: 0 0 108px;
+  width: 108px;
+  min-width: 108px;
+  padding: 8px 22px 8px 9px;
   font-size: 13px;
   font-weight: 700;
-  background-position: calc(100% - 12px) 21px, calc(100% - 7px) 21px;
+  cursor: pointer;
+  background-position: calc(100% - 13px) 21px, calc(100% - 8px) 21px;
 }
 
-/* The currency box is a text input with a datalist, so a new code can be typed. */
-.amount-field input.amount-currency {
-  padding: 8px;
-  text-transform: uppercase;
-  background-position: initial;
+/* The amount controls sit in their own box, not inside the label. A label that
+   wraps both the amount input and the currency picker forwards taps to the
+   input, which stops the picker's list from opening. */
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label {
+  display: grid;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 /* The main-currency value under a foreign amount in a transaction row. */

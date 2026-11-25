@@ -804,7 +804,7 @@ function updateDebtAmountLimit() {
   }
   const remaining = store.debtRemaining(parent.id, currentDebtFormId())
   // The amount box is in whichever currency is picked, so the cap follows it.
-  const currencySel = form.querySelector('input[data-amount-currency]')
+  const currencySel = form.querySelector('[data-amount-currency]')
   const code = store.currencyCode(currencySel ? currencySel.value : '')
   const mainCode = store.currencyCode(store.getSettings().mainCurrency)
   const rate = code && code !== mainCode ? store.rateFor(code) : 1
@@ -2425,9 +2425,13 @@ function amountFieldHtml(rec) {
   const entered = rec && Number(rec.originalAmount) > 0 ? Number(rec.originalAmount) : (rec && rec.amount ? Number(rec.amount) : '')
   return `
     <span class="amount-field">
-      <input name="amount" type="number" step="0.01" inputmode="decimal" required value="${entered}" placeholder="0.00" />
-      <input name="currency" class="amount-currency" data-amount-currency list="tx-currency-options" data-saved-currency="${escapeHtml(store.currencyCode(rec && rec.currency))}" data-saved-rate="${rec && Number(rec.rate) > 0 ? Number(rec.rate) : ''}" value="${escapeHtml(selected)}" maxlength="12" aria-label="Amount currency" />
-      <datalist id="tx-currency-options">${choices.map((code) => `<option value="${escapeHtml(code)}"></option>`).join('')}</datalist>
+      <input name="amount" type="number" step="0.01" inputmode="decimal" required aria-label="Amount" value="${entered}" placeholder="0.00" />
+      <select name="currency" class="amount-currency" data-amount-currency data-saved-currency="${escapeHtml(store.currencyCode(rec && rec.currency))}" data-saved-rate="${rec && Number(rec.rate) > 0 ? Number(rec.rate) : ''}" title="Currency for this amount" aria-label="Amount currency">
+        ${choices.map((code) => {
+          const label = currencyLabel(code)
+          return `<option value="${escapeHtml(code)}" ${code === selected ? 'selected' : ''}>${escapeHtml(label !== code ? `${code} · ${label}` : code)}</option>`
+        }).join('')}
+      </select>
       <button class="icon-btn sm calc-btn" type="button" data-action="open-calc" aria-label="Open calculator">${icon('calc')}</button>
     </span>`
 }
@@ -2442,7 +2446,7 @@ function amountCurrencyExtraHtml() {
 
 function refreshAmountCurrencyHint(form) {
   if (!form) return
-  const select = form.querySelector('input[data-amount-currency]')
+  const select = form.querySelector('[data-amount-currency]')
   const amountInput = form.querySelector('input[name="amount"]')
   const note = form.querySelector('[data-amount-note]')
   const rateWrap = form.querySelector('[data-rate-wrap]')
@@ -2484,7 +2488,7 @@ function refreshAmountCurrencyHint(form) {
 function wireAmountCurrencyForm() {
   const form = document.querySelector('form[data-form="income"], form[data-form="expense"], form[data-form="transfer"], form[data-form="debt"]')
   if (!form) return
-  const select = form.querySelector('input[data-amount-currency]')
+  const select = form.querySelector('[data-amount-currency]')
   const amountInput = form.querySelector('input[name="amount"]')
   const rateInput = form.querySelector('input[name="rate"]')
   if (select) {
@@ -2684,9 +2688,9 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Salary, refund…" /></label>
       <div class="row2">
-        <label style="grid-column:1/-1">Amount
+        <div class="field" style="grid-column:1/-1"><span class="field-label">Amount</span>
           ${amountFieldHtml(r)}
-        </label>
+        </div>
       </div>
       ${amountCurrencyExtraHtml()}
       <div class="row2">
@@ -2730,9 +2734,9 @@ function renderModal() {
     body = `
       <label>Description<input name="name" required maxlength="120" value="${escapeHtml(r.name || '')}" placeholder="Groceries, rent…" /></label>
       <div class="row2">
-        <label style="grid-column:1/-1">Amount
+        <div class="field" style="grid-column:1/-1"><span class="field-label">Amount</span>
           ${amountFieldHtml(r)}
-        </label>
+        </div>
       </div>
       ${amountCurrencyExtraHtml()}
       <div class="row2">
@@ -2774,9 +2778,9 @@ function renderModal() {
     title = `${isEdit ? 'Edit' : 'New'} transfer`
     body = `
       <div class="row2">
-        <label style="grid-column:1/-1">Amount
+        <div class="field" style="grid-column:1/-1"><span class="field-label">Amount</span>
           ${amountFieldHtml(r)}
-        </label>
+        </div>
       </div>
       ${amountCurrencyExtraHtml()}
       <div class="row2">
@@ -2821,9 +2825,9 @@ function renderModal() {
         <label>Number<input name="number" maxlength="40" value="${escapeHtml(d.number || '')}" placeholder="Phone or reference" /></label>
       </div>
       <div class="row2">
-        <label style="grid-column:1/-1">Amount
+        <div class="field" style="grid-column:1/-1"><span class="field-label">Amount</span>
           ${amountFieldHtml(d)}
-        </label>
+        </div>
       </div>
       ${amountCurrencyExtraHtml()}
       <label>Type<select name="direction" data-debt-direction>
@@ -3524,15 +3528,13 @@ document.addEventListener('submit', (event) => {
     if (!code || code === mainCode) {
       return { amount: raw, originalAmount: raw, currency: mainCode, rate: 1 }
     }
-    const select = form.querySelector('input[data-amount-currency]')
+    const select = form.querySelector('[data-amount-currency]')
     const savedCode = (select && select.dataset.savedCurrency) || ''
     const savedRate = Number(select && select.dataset.savedRate) || 0
     const typed = Number(String(data.get('rate') || '').replace(',', '.'))
     // Keep a record's own rate while its currency is unchanged; a newly picked
     // currency is converted with today's saved rate (or the one typed below).
     const rateToUse = typed > 0 ? typed : (code === savedCode && savedRate > 0 ? savedRate : 0)
-    // A code typed in the sheet that the app has never seen becomes a currency.
-    store.addCurrency(code)
     const info = store.convertAmount(raw, code, rateToUse)
     if (!info) return null
     if (typed > 0 && !(store.rateFor(code) > 0)) store.setRate(code, typed)
