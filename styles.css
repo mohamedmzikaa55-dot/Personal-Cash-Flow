@@ -1931,6 +1931,18 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
+.calc-paste {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.calc-paste input {
+  min-height: 40px;
+  font-size: 15px;
+}
+
 .calc-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

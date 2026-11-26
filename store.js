@@ -1017,8 +1017,8 @@ function walletBalance(id) {
 }
 
 // Freeze the wallet balance(s) into a transaction at the moment it is saved.
-// The numbers are a permanent snapshot: editing a record (or releasing a
-// pending one) keeps the original figure instead of rewriting history.
+// The figures are permanent: editing anything later — including the amount —
+// keeps the original snapshot instead of rewriting history.
 function stampBalanceAfter(rec, kind) {
   if (!rec) return
   if (kind === 'transfer') {

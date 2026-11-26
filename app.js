@@ -194,11 +194,11 @@ function balanceAfterFormHtml(rec, kind) {
     const bits = []
     if (hasBalanceSnapshot(rec.fromBalanceAfter)) bits.push(`from ${money(rec.fromBalanceAfter)}`)
     if (hasBalanceSnapshot(rec.toBalanceAfter)) bits.push(`to ${money(rec.toBalanceAfter)}`)
-    return `<p class="muted tight" style="margin-top:-4px">Balance after this transfer (frozen at entry): ${escapeHtml(bits.join(' · '))}</p>`
+    return `<p class="muted tight" style="margin-top:-4px">Balance after this transfer: ${escapeHtml(bits.join(' · '))} — frozen when it was saved.</p>`
   }
   if (kind !== 'income' && kind !== 'expense') return ''
   return hasBalanceSnapshot(rec.balanceAfter)
-    ? `<p class="muted tight" style="margin-top:-4px">Balance after this transaction (frozen at entry): ${escapeHtml(money(rec.balanceAfter))}</p>`
+    ? `<p class="muted tight" style="margin-top:-4px">Balance after this transaction: ${escapeHtml(money(rec.balanceAfter))} — frozen when it was saved.</p>`
     : ''
 }
 
@@ -243,6 +243,8 @@ function syncItemsTotal(form) {
     return
   }
   const total = items.reduce((sum, item) => sum + item.amount, 0)
+  // Fill the amount from the items and keep it locked while they are in use,
+  // so the total and the item list can never drift apart.
   if (amountInput) {
     amountInput.value = String(Math.round(total * 100) / 100)
     amountInput.setAttribute('readonly', 'readonly')
@@ -1028,7 +1030,7 @@ function txRow(tx, walletId) {
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}${tx.fee ? ` · fee ${hasForeignAmount(tx) ? `${plainMoney(tx.originalFee)} ${escapeHtml(tx.currency)}` : money(tx.fee)}` : ''}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${amountLabel(tx)}${amountMainLine(tx)}</div>`
   }
   return `
@@ -2298,6 +2300,18 @@ function scheduleModalHtml() {
 // or "how much did I spend" sums without leaving the app.
 let calc = { current: '0', acc: null, op: null, fresh: true, expr: '', error: false }
 
+// Start the pad from the number already typed in the amount box, so opening the
+// calculator never throws away what the user just entered.
+function calcSeedFromAmount() {
+  const form = document.querySelector(`form[data-form="${modal || ''}"]`)
+  const input = form ? form.querySelector('input[name="amount"]') : null
+  const raw = String((input && input.value) || '').trim()
+  if (!raw) return ''
+  const cleaned = raw.replace(/[^0-9.\-]/g, '')
+  if (!cleaned || !Number.isFinite(Number(cleaned))) return ''
+  return cleaned
+}
+
 function calcReset() {
   calc.current = '0'
   calc.acc = null
@@ -2466,6 +2480,12 @@ let calcOverlay = null
 function calcOpen() {
   if (calcOverlay) return
   calcReset()
+  const seed = calcSeedFromAmount()
+  if (seed) {
+    calc.current = seed
+    // A typed 0 should still be replaced by the first digit, like a fresh pad.
+    calc.fresh = seed === '0' || seed === '-0'
+  }
   // Leave the amount field first so the on-screen keyboard cannot sit on top
   // of the pad's own keys.
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
@@ -2474,6 +2494,23 @@ function calcOpen() {
   host.innerHTML = calcModalHtml()
   calcOverlay = host.firstElementChild
   document.body.appendChild(calcOverlay)
+  // Numbers can be typed or pasted straight into the calculator screen.
+  const pasteInput = calcOverlay.querySelector('#calc-paste')
+  if (pasteInput) {
+    pasteInput.addEventListener('input', () => {
+      const raw = String(pasteInput.value || '').trim()
+      if (!raw) return
+      const cleaned = raw.replace(/[^0-9.\-]/g, '')
+      if (!cleaned || !Number.isFinite(Number(cleaned))) return
+      calc.error = false
+      calc.expr = ''
+      calc.acc = null
+      calc.op = null
+      calc.current = cleaned
+      calc.fresh = cleaned === '0' || cleaned === '-0'
+      calcRenderDisplay()
+    })
+  }
 }
 
 // Close the calculator. When a value is passed the amount field of the sheet we
@@ -2522,6 +2559,9 @@ function calcModalHtml() {
             <div class="calc-expr" id="calc-expr">${escapeHtml(display.head || '\u00A0')}</div>
             <div class="calc-value mono" id="calc-value">${escapeHtml(display.value)}</div>
           </div>
+          <label class="calc-paste">Paste a number here
+            <input id="calc-paste" type="text" inputmode="decimal" placeholder="e.g. 1250.75" aria-label="Paste a number into the calculator" />
+          </label>
           <div class="calc-grid">${grid}</div>
           <div class="form-actions">
             <button class="ghost-btn" type="button" data-action="calc-cancel">Cancel</button>
@@ -2920,6 +2960,7 @@ function renderModal() {
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Fee (optional)<input name="fee" type="number" step="0.01" value="${hasForeignAmount(r) && Number(r.originalFee) > 0 ? Number(r.originalFee) : (r.fee ? Number(r.fee) : '')}" placeholder="0.00" /></label>
       </div>
+      <p class="muted tight" style="margin-top:-4px">The fee is paid by the sender on top of the amount. It does not change the transaction amount.</p>
       <div class="row2">
         <label>From${walletSelect(r.fromId, 'fromId')}</label>
         <label>To${walletSelect(r.toId, 'toId')}</label>
