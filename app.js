@@ -272,6 +272,20 @@ function itemsSectionHtml(items) {
 }
 
 // Short summary put in a transaction row's meta line.
+// In a wallet's Activity list the snapshot must be the balance of THAT wallet.
+// A transfer has two snapshots, so pick the side this wallet played.
+function walletSnapshot(tx, walletId) {
+  if (!walletId) return null
+  if (tx.kind === 'transfer') return tx.toId === walletId ? tx.toBalanceAfter : tx.fromBalanceAfter
+  return tx.balanceAfter
+}
+
+function walletSnapshotLine(tx, walletId) {
+  const snapshot = walletSnapshot(tx, walletId)
+  if (!hasBalanceSnapshot(snapshot)) return ''
+  return `<div class="tx-snapshot">Snapshot <span class="mono">${escapeHtml(money(snapshot))}</span></div>`
+}
+
 function itemsSummary(rec) {
   const items = Array.isArray(rec && rec.items) ? rec.items : []
   if (!items.length) return ''
@@ -993,7 +1007,7 @@ function debtTxRow(d) {
   `
 }
 
-function txRow(tx) {
+function txRow(tx, walletId) {
   let avatar = ''
   let title = ''
   let meta = ''
@@ -1001,12 +1015,12 @@ function txRow(tx) {
   if (tx.kind === 'income') {
     avatar = `<span class="avatar income">${icon('up')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
+    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
     amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar expense">${icon('down')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
+    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
     amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'debt') {
     const info = debtTypeInfo(tx.direction)
@@ -1017,7 +1031,7 @@ function txRow(tx) {
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}${escapeHtml(balanceAfterMeta(tx))}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${amountLabel(tx)}${amountMainLine(tx)}</div>`
   }
   return `
@@ -1026,6 +1040,7 @@ function txRow(tx) {
       <div class="body">
         <div class="title">${title}</div>
         <div class="meta">${meta}</div>
+        ${walletId ? walletSnapshotLine(tx, walletId) : ''}
       </div>
       ${amount}
     </article>
@@ -1622,7 +1637,7 @@ function renderWalletDetail() {
     <section class="section">
       <div class="section-head"><h2>Activity</h2><span class="item-meta">${tx.length} item${tx.length === 1 ? '' : 's'}</span></div>
       <div class="list">
-        ${tx.length ? tx.map(txRow).join('') : emptyState('No transactions for this wallet yet.', 'inbox')}
+        ${tx.length ? tx.map((row) => txRow(row, wallet.id)).join('') : emptyState('No transactions for this wallet yet.', 'inbox')}
       </div>
     </section>
   `

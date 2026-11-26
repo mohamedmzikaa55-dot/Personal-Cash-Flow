@@ -1855,6 +1855,18 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+/* Wallet Activity: the balance frozen on the record right after it moved. */
+.tx-snapshot {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.tx-snapshot .mono {
+  font-weight: 700;
+}
+
 /* The main-currency value under a foreign amount in a transaction row. */
 .item .amount .amount-main {
   display: block;

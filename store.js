@@ -2133,6 +2133,7 @@ export const store = {
   addDebt(fields) {
     const debt = normalizeDebt(fields)
     state.debts.push(debt)
+    stampBalanceAfter(debt, 'debt')
     save()
     return debt
   },
@@ -2140,6 +2141,7 @@ export const store = {
     const debt = state.debts.find((d) => d.id === id)
     if (!debt) return
     Object.assign(debt, normalizeDebt({ ...debt, ...fields, id }))
+    stampBalanceAfter(debt, 'debt')
     save()
   },
   removeDebt(id) {
