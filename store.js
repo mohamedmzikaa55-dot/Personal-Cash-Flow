@@ -1017,8 +1017,8 @@ function walletBalance(id) {
 }
 
 // Freeze the wallet balance(s) into a transaction at the moment it is saved.
-// The numbers are a snapshot, so later edits do not rewrite history; releasing
-// a pending record saves again and captures the balance after the real move.
+// The numbers are a permanent snapshot: editing a record (or releasing a
+// pending one) keeps the original figure instead of rewriting history.
 function stampBalanceAfter(rec, kind) {
   if (!rec) return
   if (kind === 'transfer') {
@@ -2005,7 +2005,6 @@ export const store = {
     else Object.assign(target, normalizeTransfer({ ...target, ...fields, id }))
     if ((kind === 'income' || kind === 'expense') && target.repeatGroupId && target.repeat !== 'none') target.excepted = true
     if (kind === 'income' || kind === 'expense') ensureWalletCurrency(target.walletId, target.currency)
-    stampBalanceAfter(target, kind)
     save()
   },
   updateSeries(kind, id, fields) {
@@ -2014,7 +2013,6 @@ export const store = {
     const groupId = target.repeatGroupId
     const fromDate = target.date
     const list = kind === 'income' ? state.incomes : state.expenses
-    const patched = []
     list.forEach((rec) => {
       if (rec.repeatGroupId !== groupId || rec.date < fromDate) return
       const patch = { ...rec }
@@ -2034,9 +2032,7 @@ export const store = {
       patch.excepted = false
       Object.assign(rec, kind === 'income' ? normalizeIncome(patch) : normalizeExpense(patch))
       ensureWalletCurrency(rec.walletId, rec.currency)
-      patched.push(rec)
     })
-    patched.forEach((rec) => stampBalanceAfter(rec, kind))
     save()
   },
   removeTransaction(kind, id) {
@@ -2141,7 +2137,6 @@ export const store = {
     const debt = state.debts.find((d) => d.id === id)
     if (!debt) return
     Object.assign(debt, normalizeDebt({ ...debt, ...fields, id }))
-    stampBalanceAfter(debt, 'debt')
     save()
   },
   removeDebt(id) {

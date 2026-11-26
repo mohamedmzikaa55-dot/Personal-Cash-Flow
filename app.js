@@ -185,16 +185,6 @@ function hasBalanceSnapshot(value) {
   return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
 }
 
-function balanceAfterMeta(tx) {
-  if (tx.kind === 'transfer') {
-    const bits = []
-    if (hasBalanceSnapshot(tx.fromBalanceAfter)) bits.push(`from balance ${money(tx.fromBalanceAfter)}`)
-    if (hasBalanceSnapshot(tx.toBalanceAfter)) bits.push(`to balance ${money(tx.toBalanceAfter)}`)
-    return bits.length ? ` · ${bits.join(' · ')}` : ''
-  }
-  return hasBalanceSnapshot(tx.balanceAfter) ? ` · balance after ${money(tx.balanceAfter)}` : ''
-}
-
 // Read-only snapshot shown in the editor so the figure recorded at entry is
 // visible even though it cannot be edited.
 function balanceAfterFormHtml(rec, kind) {
@@ -204,11 +194,11 @@ function balanceAfterFormHtml(rec, kind) {
     const bits = []
     if (hasBalanceSnapshot(rec.fromBalanceAfter)) bits.push(`from ${money(rec.fromBalanceAfter)}`)
     if (hasBalanceSnapshot(rec.toBalanceAfter)) bits.push(`to ${money(rec.toBalanceAfter)}`)
-    return `<p class="muted tight" style="margin-top:-4px">Balance after this transfer: ${escapeHtml(bits.join(' · '))}</p>`
+    return `<p class="muted tight" style="margin-top:-4px">Balance after this transfer (frozen at entry): ${escapeHtml(bits.join(' · '))}</p>`
   }
   if (kind !== 'income' && kind !== 'expense') return ''
   return hasBalanceSnapshot(rec.balanceAfter)
-    ? `<p class="muted tight" style="margin-top:-4px">Balance after this transaction: ${escapeHtml(money(rec.balanceAfter))}</p>`
+    ? `<p class="muted tight" style="margin-top:-4px">Balance after this transaction (frozen at entry): ${escapeHtml(money(rec.balanceAfter))}</p>`
     : ''
 }
 
@@ -271,21 +261,28 @@ function itemsSectionHtml(items) {
     </div>`
 }
 
+// The frozen balance snapshot shown on a transaction card. Inside one wallet
+// only that wallet's side of a transfer is relevant; everywhere else both
+// sides are shown.
+function snapshotLine(tx, walletId) {
+  let bits = []
+  if (tx.kind === 'transfer') {
+    if (walletId) {
+      const arrived = tx.toId === walletId
+      const value = arrived ? tx.toBalanceAfter : tx.fromBalanceAfter
+      if (hasBalanceSnapshot(value)) bits.push(`${arrived ? 'to' : 'from'} ${money(value)}`)
+    } else {
+      if (hasBalanceSnapshot(tx.fromBalanceAfter)) bits.push(`from ${money(tx.fromBalanceAfter)}`)
+      if (hasBalanceSnapshot(tx.toBalanceAfter)) bits.push(`to ${money(tx.toBalanceAfter)}`)
+    }
+  } else if (hasBalanceSnapshot(tx.balanceAfter)) {
+    bits = [money(tx.balanceAfter)]
+  }
+  if (!bits.length) return ''
+  return `<div class="tx-snapshot" title="Frozen when this transaction was saved">Snapshot <span class="mono">${escapeHtml(bits.join(' · '))}</span></div>`
+}
+
 // Short summary put in a transaction row's meta line.
-// In a wallet's Activity list the snapshot must be the balance of THAT wallet.
-// A transfer has two snapshots, so pick the side this wallet played.
-function walletSnapshot(tx, walletId) {
-  if (!walletId) return null
-  if (tx.kind === 'transfer') return tx.toId === walletId ? tx.toBalanceAfter : tx.fromBalanceAfter
-  return tx.balanceAfter
-}
-
-function walletSnapshotLine(tx, walletId) {
-  const snapshot = walletSnapshot(tx, walletId)
-  if (!hasBalanceSnapshot(snapshot)) return ''
-  return `<div class="tx-snapshot">Snapshot <span class="mono">${escapeHtml(money(snapshot))}</span></div>`
-}
-
 function itemsSummary(rec) {
   const items = Array.isArray(rec && rec.items) ? rec.items : []
   if (!items.length) return ''
@@ -1015,12 +1012,12 @@ function txRow(tx, walletId) {
   if (tx.kind === 'income') {
     avatar = `<span class="avatar income">${icon('up')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
+    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${itemsSummary(tx)}`
     amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar expense">${icon('down')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
+    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${itemsSummary(tx)}`
     amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'debt') {
     const info = debtTypeInfo(tx.direction)
@@ -1031,7 +1028,7 @@ function txRow(tx, walletId) {
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}${walletId ? '' : escapeHtml(balanceAfterMeta(tx))}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${amountLabel(tx)}${amountMainLine(tx)}</div>`
   }
   return `
@@ -1040,7 +1037,7 @@ function txRow(tx, walletId) {
       <div class="body">
         <div class="title">${title}</div>
         <div class="meta">${meta}</div>
-        ${walletId ? walletSnapshotLine(tx, walletId) : ''}
+        ${snapshotLine(tx, walletId)}
       </div>
       ${amount}
     </article>
@@ -1061,7 +1058,8 @@ function pendingRow(rec) {
         <span class="avatar transfer">${icon('transfer')}</span>
         <div class="body">
           <div class="title">${escapeHtml(store.walletName(rec.fromId) || '?')} → ${escapeHtml(store.walletName(rec.toId) || '?')}</div>
-          <div class="meta">${amountLabel(rec)}${rec.fee ? ` + fee ${hasForeignAmount(rec) ? `${plainMoney(rec.originalFee)} ${escapeHtml(rec.currency)}` : money(rec.fee)}` : ''}${amountMainNote(rec)} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}${escapeHtml(balanceAfterMeta({ ...rec, kind: 'transfer' }))}</div>
+          <div class="meta">${amountLabel(rec)}${rec.fee ? ` + fee ${hasForeignAmount(rec) ? `${plainMoney(rec.originalFee)} ${escapeHtml(rec.currency)}` : money(rec.fee)}` : ''}${amountMainNote(rec)} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}</div>
+          ${snapshotLine({ ...rec, kind: 'transfer' })}
         </div>
         ${actions}
       </article>
@@ -1073,13 +1071,14 @@ function pendingRow(rec) {
     isIncome ? (store.sourceName(rec.sourceId) || 'Income') : (store.categoryName(rec.categoryId) || 'Uncategorised'),
     store.walletName(rec.walletId) || 'No wallet',
     `${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}`
-  ].map((bit) => escapeHtml(bit)).join(' · ') + escapeHtml(balanceAfterMeta(rec)) + itemsSummary(rec)
+  ].map((bit) => escapeHtml(bit)).join(' · ') + itemsSummary(rec)
   return `
     <article class="item">
       <span class="avatar ${isIncome ? 'income' : 'expense'}">${icon(isIncome ? 'up' : 'down')}</span>
       <div class="body">
         <div class="title">${escapeHtml(rec.name)} <span class="badge gold">Pending</span></div>
         <div class="meta">${meta}</div>
+        ${snapshotLine(rec)}
       </div>
       ${actions}
     </article>
