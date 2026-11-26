@@ -367,11 +367,35 @@ function moneyFields(rec) {
   }
 }
 
+// Line items on an income / expense. Each amount is in the transaction's own
+// currency, so the sum of them is the amount typed into the amount box.
+function normalizeItems(value) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 50).map((item) => ({
+    name: str(item && item.name, 80),
+    amount: Math.abs(parseMoney(item && item.amount))
+  })).filter((item) => item.name || item.amount > 0)
+}
+
+function itemsTotal(items) {
+  return round2((Array.isArray(items) ? items : []).reduce((sum, item) => sum + Math.abs(parseMoney(item.amount)), 0))
+}
+
+// A saved balance snapshot, or null when the record predates this feature.
+function storedBalance(value) {
+  if (value === '' || value == null) return null
+  const n = Number(value)
+  return Number.isFinite(n) ? round2(n) : null
+}
+
 function baseRecord(rec) {
   return {
     id: rec.id || uid('t'),
     name: str(rec.name, 120) || 'Entry',
     ...moneyFields(rec),
+    // Main-currency wallet balance captured the moment this record was saved.
+    balanceAfter: storedBalance(rec.balanceAfter),
+    items: normalizeItems(rec.items),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     walletId: str(rec.walletId, 60),
@@ -457,6 +481,10 @@ function normalizeTransfer(rec) {
     originalFee,
     fromId: str(rec.fromId, 60),
     toId: str(rec.toId, 60),
+    // A transfer snapshots both sides: what was left in `from` and what landed
+    // in `to`, after the amount and the fee were applied.
+    fromBalanceAfter: storedBalance(rec.fromBalanceAfter),
+    toBalanceAfter: storedBalance(rec.toBalanceAfter),
     date: isValidISO(rec.date) ? rec.date : todayISO(),
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(rec.time || '')) ? rec.time : nowTime(),
     note: str(rec.note, 400),
@@ -986,6 +1014,19 @@ function walletBalance(id) {
     total += (DEBT_WALLET_SIGN[d.direction] || -1) * d.amount
   })
   return round2(total)
+}
+
+// Freeze the wallet balance(s) into a transaction at the moment it is saved.
+// The numbers are a snapshot, so later edits do not rewrite history; releasing
+// a pending record saves again and captures the balance after the real move.
+function stampBalanceAfter(rec, kind) {
+  if (!rec) return
+  if (kind === 'transfer') {
+    rec.fromBalanceAfter = walletBalance(rec.fromId)
+    rec.toBalanceAfter = walletBalance(rec.toId)
+  } else {
+    rec.balanceAfter = walletBalance(rec.walletId)
+  }
 }
 
 // The currencies a wallet holds: the ones configured on it, plus any currency
@@ -1935,6 +1976,7 @@ export const store = {
     const made = dates.map((date) => normalizeIncome({ ...fields, repeatGroupId, date, name: fields.name || sourceName(fields.sourceId) || 'Income' }))
     state.incomes.push(...made)
     made.forEach((rec) => ensureWalletCurrency(rec.walletId, rec.currency))
+    made.forEach((rec) => stampBalanceAfter(rec, 'income'))
     save()
     return made[0]
   },
@@ -1944,12 +1986,14 @@ export const store = {
     const made = dates.map((date) => normalizeExpense({ ...fields, repeatGroupId, date, name: fields.name || categoryName(fields.categoryId) || 'Expense' }))
     state.expenses.push(...made)
     made.forEach((rec) => ensureWalletCurrency(rec.walletId, rec.currency))
+    made.forEach((rec) => stampBalanceAfter(rec, 'expense'))
     save()
     return made[0]
   },
   addTransfer(fields) {
     const rec = normalizeTransfer(fields)
     state.transfers.push(rec)
+    stampBalanceAfter(rec, 'transfer')
     save()
     return rec
   },
@@ -1961,6 +2005,7 @@ export const store = {
     else Object.assign(target, normalizeTransfer({ ...target, ...fields, id }))
     if ((kind === 'income' || kind === 'expense') && target.repeatGroupId && target.repeat !== 'none') target.excepted = true
     if (kind === 'income' || kind === 'expense') ensureWalletCurrency(target.walletId, target.currency)
+    stampBalanceAfter(target, kind)
     save()
   },
   updateSeries(kind, id, fields) {
@@ -1969,6 +2014,7 @@ export const store = {
     const groupId = target.repeatGroupId
     const fromDate = target.date
     const list = kind === 'income' ? state.incomes : state.expenses
+    const patched = []
     list.forEach((rec) => {
       if (rec.repeatGroupId !== groupId || rec.date < fromDate) return
       const patch = { ...rec }
@@ -1982,12 +2028,15 @@ export const store = {
       if (fields.time !== undefined) patch.time = fields.time
       if (fields.walletId !== undefined) patch.walletId = fields.walletId
       if (fields.note !== undefined) patch.note = fields.note
+      if (fields.items !== undefined) patch.items = fields.items
       if (kind === 'income' && fields.sourceId !== undefined) patch.sourceId = fields.sourceId
       if (kind === 'expense' && fields.categoryId !== undefined) patch.categoryId = fields.categoryId
       patch.excepted = false
       Object.assign(rec, kind === 'income' ? normalizeIncome(patch) : normalizeExpense(patch))
       ensureWalletCurrency(rec.walletId, rec.currency)
+      patched.push(rec)
     })
+    patched.forEach((rec) => stampBalanceAfter(rec, kind))
     save()
   },
   removeTransaction(kind, id) {

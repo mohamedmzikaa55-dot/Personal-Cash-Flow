@@ -1868,6 +1868,25 @@ textarea::placeholder {
   min-height: 16px;
 }
 
+/* One line item in an income / expense sheet: name, amount in the transaction
+   currency, and a remove button. */
+.tx-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.tx-item-row .mini-btn {
+  height: 46px;
+  width: 34px;
+  padding: 0;
+}
+
+.tx-item-row input[name='itemAmount'] {
+  text-align: right;
+}
+
 /* ---------- calculator sheet ---------- */
 .calc {
   display: grid;

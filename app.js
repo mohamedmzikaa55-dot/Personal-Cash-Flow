@@ -179,6 +179,112 @@ function hasForeignAmount(rec) {
   return Boolean(code && code !== store.currencyCode(store.getSettings().mainCurrency) && Number(rec.originalAmount) > 0)
 }
 
+// The main-currency balance frozen onto a record when it was saved. Older
+// records have no snapshot, in which case nothing extra is shown.
+function hasBalanceSnapshot(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+}
+
+function balanceAfterMeta(tx) {
+  if (tx.kind === 'transfer') {
+    const bits = []
+    if (hasBalanceSnapshot(tx.fromBalanceAfter)) bits.push(`from balance ${money(tx.fromBalanceAfter)}`)
+    if (hasBalanceSnapshot(tx.toBalanceAfter)) bits.push(`to balance ${money(tx.toBalanceAfter)}`)
+    return bits.length ? ` · ${bits.join(' · ')}` : ''
+  }
+  return hasBalanceSnapshot(tx.balanceAfter) ? ` · balance after ${money(tx.balanceAfter)}` : ''
+}
+
+// Read-only snapshot shown in the editor so the figure recorded at entry is
+// visible even though it cannot be edited.
+function balanceAfterFormHtml(rec, kind) {
+  if (!rec || !rec.id) return ''
+  if (kind === 'transfer') {
+    if (!hasBalanceSnapshot(rec.fromBalanceAfter) && !hasBalanceSnapshot(rec.toBalanceAfter)) return ''
+    const bits = []
+    if (hasBalanceSnapshot(rec.fromBalanceAfter)) bits.push(`from ${money(rec.fromBalanceAfter)}`)
+    if (hasBalanceSnapshot(rec.toBalanceAfter)) bits.push(`to ${money(rec.toBalanceAfter)}`)
+    return `<p class="muted tight" style="margin-top:-4px">Balance after this transfer: ${escapeHtml(bits.join(' · '))}</p>`
+  }
+  if (kind !== 'income' && kind !== 'expense') return ''
+  return hasBalanceSnapshot(rec.balanceAfter)
+    ? `<p class="muted tight" style="margin-top:-4px">Balance after this transaction: ${escapeHtml(money(rec.balanceAfter))}</p>`
+    : ''
+}
+
+// ---------- income / expense line items ----------
+
+// Editable rows for the items that make up an income or expense. Amounts are in
+// the transaction's chosen currency, exactly like the amount box.
+function itemsHtml(items) {
+  const rows = Array.isArray(items) && items.length ? items : [{ name: '', amount: 0 }]
+  return rows.map((item) => `
+    <div class="tx-item-row" data-item-row>
+      <input name="itemName" type="text" maxlength="80" value="${escapeHtml(item.name || '')}" placeholder="Item name" aria-label="Item name" />
+      <input name="itemAmount" type="number" step="0.01" inputmode="decimal" value="${Number(item.amount) > 0 ? Number(item.amount) : ''}" placeholder="0.00" aria-label="Item amount" />
+      <button type="button" class="mini-btn danger" data-action="tx-remove-item" aria-label="Remove item">${icon('trash')}</button>
+    </div>`).join('')
+}
+
+function readItemRows(form) {
+  if (!form) return []
+  return Array.from(form.querySelectorAll('[data-item-row]')).map((row) => {
+    const nameEl = row.querySelector('input[name="itemName"]')
+    const amountEl = row.querySelector('input[name="itemAmount"]')
+    return {
+      name: String((nameEl && nameEl.value) || '').trim(),
+      amount: Math.abs(store.parseMoney(amountEl && amountEl.value))
+    }
+  }).filter((item) => item.name || item.amount > 0)
+}
+
+// Keep the amount box in step with the items: their sum is the transaction
+// amount, and the box is locked while items are in use so the two can't drift.
+function syncItemsTotal(form) {
+  if (!form) return
+  const items = readItemRows(form)
+  const amountInput = form.querySelector('input[name="amount"]')
+  const note = form.querySelector('[data-items-note]')
+  const currencySel = form.querySelector('[data-amount-currency]')
+  const code = store.currencyCode(currencySel && currencySel.value) || store.currencyCode(store.getSettings().mainCurrency)
+  if (!items.length) {
+    if (amountInput) amountInput.removeAttribute('readonly')
+    if (note) note.textContent = ''
+    return
+  }
+  const total = items.reduce((sum, item) => sum + item.amount, 0)
+  if (amountInput) {
+    amountInput.value = String(Math.round(total * 100) / 100)
+    amountInput.setAttribute('readonly', 'readonly')
+    amountInput.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  if (note) note.textContent = `${items.length} item${items.length === 1 ? '' : 's'} · total ${plainMoney(total)} ${code} (${code} is the transaction currency).`
+}
+
+function itemsSectionHtml(items) {
+  return `
+    <div class="seg-field" data-items-section>
+      <span class="seg-label">Items (optional)</span>
+      <div data-items-list>${itemsHtml(items)}</div>
+      <button type="button" class="ghost-btn compact" data-action="tx-add-item" style="margin-top:8px">+ Add item</button>
+      <p class="muted tight" data-items-note style="margin-top:4px"></p>
+    </div>`
+}
+
+// Short summary put in a transaction row's meta line.
+function itemsSummary(rec) {
+  const items = Array.isArray(rec && rec.items) ? rec.items : []
+  if (!items.length) return ''
+  const code = hasForeignAmount(rec) ? rec.currency : ''
+  const label = (item) => {
+    const amount = code ? `${plainMoney(item.amount)} ${escapeHtml(code)}` : money(item.amount)
+    return `${escapeHtml(item.name || 'Item')} ${amount}`
+  }
+  const parts = items.slice(0, 3).map(label)
+  if (items.length > 3) parts.push(`+${items.length - 3} more`)
+  return ` · ${parts.join(', ')}`
+}
+
 // The amount as the user entered it: "100.00 USD" for a foreign record, or the
 // usual main-money figure otherwise.
 function amountLabel(rec) {
@@ -895,12 +1001,12 @@ function txRow(tx) {
   if (tx.kind === 'income') {
     avatar = `<span class="avatar income">${icon('up')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
+    meta = `${escapeHtml(store.sourceName(tx.sourceId) || 'Income')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
     amount = `<div class="amount pos mono" ${tx.pending ? 'style="opacity:.55"' : ''}>+${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'expense') {
     avatar = `<span class="avatar expense">${icon('down')}</span>`
     title = `${escapeHtml(tx.name)}${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}`
+    meta = `${escapeHtml(store.categoryName(tx.categoryId) || 'Uncategorised')} · ${escapeHtml(store.walletName(tx.walletId) || 'No wallet')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${escapeHtml(balanceAfterMeta(tx))}${itemsSummary(tx)}`
     amount = `<div class="amount neg mono" ${tx.pending ? 'style="opacity:.55"' : ''}>-${amountLabel(tx)}${amountMainLine(tx)}</div>`
   } else if (tx.kind === 'debt') {
     const info = debtTypeInfo(tx.direction)
@@ -911,7 +1017,7 @@ function txRow(tx) {
   } else {
     avatar = `<span class="avatar transfer">${icon('transfer')}</span>`
     title = `Transfer${tx.pending ? ' <span class="badge gold">Pending</span>' : ''}`
-    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}`
+    meta = `${escapeHtml(store.walletName(tx.fromId) || '?')} → ${escapeHtml(store.walletName(tx.toId) || '?')} · ${store.formatDate(tx.date)}${tx.time ? ' · ' + tx.time : ''}${tx.releasedDate ? ` · released ${store.formatDate(tx.releasedDate)}` : ''}${escapeHtml(balanceAfterMeta(tx))}`
     amount = `<div class="amount mono" ${tx.pending ? 'style="opacity:.55"' : ''}>${amountLabel(tx)}${amountMainLine(tx)}</div>`
   }
   return `
@@ -940,7 +1046,7 @@ function pendingRow(rec) {
         <span class="avatar transfer">${icon('transfer')}</span>
         <div class="body">
           <div class="title">${escapeHtml(store.walletName(rec.fromId) || '?')} → ${escapeHtml(store.walletName(rec.toId) || '?')}</div>
-          <div class="meta">${amountLabel(rec)}${rec.fee ? ` + fee ${hasForeignAmount(rec) ? `${plainMoney(rec.originalFee)} ${escapeHtml(rec.currency)}` : money(rec.fee)}` : ''}${amountMainNote(rec)} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}</div>
+          <div class="meta">${amountLabel(rec)}${rec.fee ? ` + fee ${hasForeignAmount(rec) ? `${plainMoney(rec.originalFee)} ${escapeHtml(rec.currency)}` : money(rec.fee)}` : ''}${amountMainNote(rec)} · ${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}${escapeHtml(balanceAfterMeta({ ...rec, kind: 'transfer' }))}</div>
         </div>
         ${actions}
       </article>
@@ -952,7 +1058,7 @@ function pendingRow(rec) {
     isIncome ? (store.sourceName(rec.sourceId) || 'Income') : (store.categoryName(rec.categoryId) || 'Uncategorised'),
     store.walletName(rec.walletId) || 'No wallet',
     `${store.formatDate(rec.date)}${rec.time ? ' · ' + rec.time : ''}`
-  ].map((bit) => escapeHtml(bit)).join(' · ')
+  ].map((bit) => escapeHtml(bit)).join(' · ') + escapeHtml(balanceAfterMeta(rec)) + itemsSummary(rec)
   return `
     <article class="item">
       <span class="avatar ${isIncome ? 'income' : 'expense'}">${icon(isIncome ? 'up' : 'down')}</span>
@@ -2438,10 +2544,12 @@ function amountFieldHtml(rec) {
 
 // The line under the amount that explains the conversion, plus a rate box that
 // only appears when the chosen currency has no saved rate yet.
-function amountCurrencyExtraHtml() {
+function amountCurrencyExtraHtml(rec, kind) {
   return `
     <p class="muted tight amount-currency-note" data-amount-note style="margin-top:-2px"></p>
-    <label data-rate-wrap style="display:none"><span data-rate-label>Rate</span><input name="rate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="0.0000" /></label>`
+    <label data-rate-wrap style="display:none"><span data-rate-label>Rate</span><input name="rate" type="number" step="0.0001" min="0" inputmode="decimal" placeholder="0.0000" /></label>
+    ${balanceAfterFormHtml(rec, kind)}
+    ${kind === 'income' || kind === 'expense' ? itemsSectionHtml(rec && rec.items) : ''}`
 }
 
 function refreshAmountCurrencyHint(form) {
@@ -2503,6 +2611,17 @@ function wireAmountCurrencyForm() {
   }
   if (amountInput) amountInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
   if (rateInput) rateInput.addEventListener('input', () => refreshAmountCurrencyHint(form))
+  const itemsList = form.querySelector('[data-items-list]')
+  if (itemsList) {
+    itemsList.addEventListener('input', (event) => {
+      if (event.target.matches('input')) syncItemsTotal(form)
+    })
+    itemsList.addEventListener('keydown', (event) => {
+      // Enter in an item row should never save the whole sheet by accident.
+      if (event.key === 'Enter') { event.preventDefault(); event.target.blur() }
+    })
+  }
+  syncItemsTotal(form)
   refreshAmountCurrencyHint(form)
 }
 
@@ -2692,7 +2811,7 @@ function renderModal() {
           ${amountFieldHtml(r)}
         </div>
       </div>
-      ${amountCurrencyExtraHtml()}
+      ${amountCurrencyExtraHtml(r, 'income')}
       <div class="row2">
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
@@ -2738,7 +2857,7 @@ function renderModal() {
           ${amountFieldHtml(r)}
         </div>
       </div>
-      ${amountCurrencyExtraHtml()}
+      ${amountCurrencyExtraHtml(r, 'expense')}
       <div class="row2">
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Time<input name="time" type="time" value="${escapeHtml(r.time || store.nowTime())}" /></label>
@@ -2782,7 +2901,7 @@ function renderModal() {
           ${amountFieldHtml(r)}
         </div>
       </div>
-      ${amountCurrencyExtraHtml()}
+      ${amountCurrencyExtraHtml(r, 'transfer')}
       <div class="row2">
         <label>Date<input name="date" type="date" value="${r.date || store.todayISO()}" /></label>
         <label>Fee (optional)<input name="fee" type="number" step="0.01" value="${hasForeignAmount(r) && Number(r.originalFee) > 0 ? Number(r.originalFee) : (r.fee ? Number(r.fee) : '')}" placeholder="0.00" /></label>
@@ -2829,7 +2948,7 @@ function renderModal() {
           ${amountFieldHtml(d)}
         </div>
       </div>
-      ${amountCurrencyExtraHtml()}
+      ${amountCurrencyExtraHtml(d, 'debt')}
       <label>Type<select name="direction" data-debt-direction>
           ${Object.keys(DEBT_TYPES).map((key) => `<option value="${key}" ${key === direction ? 'selected' : ''}>${key}</option>`).join('')}
         </select></label>
@@ -3025,6 +3144,25 @@ document.addEventListener('click', (event) => {
     return
   }
   if (action === 'wallet-back') { goBack(); return }
+
+  if (action === 'tx-add-item') {
+    const form = actionEl.closest('form')
+    const list = form && form.querySelector('[data-items-list]')
+    if (list) list.insertAdjacentHTML('beforeend', itemsHtml([{ name: '', amount: 0 }]))
+    syncItemsTotal(form)
+    return
+  }
+  if (action === 'tx-remove-item') {
+    const row = actionEl.closest('[data-item-row]')
+    const form = actionEl.closest('form')
+    if (row) row.remove()
+    if (form && !form.querySelector('[data-item-row]')) {
+      const list = form.querySelector('[data-items-list]')
+      if (list) list.insertAdjacentHTML('beforeend', itemsHtml([{ name: '', amount: 0 }]))
+    }
+    syncItemsTotal(form)
+    return
+  }
 
   if (action === 'month-prev') { shiftMonth(monthStep() * -1); render(); return }
   if (action === 'month-next') { shiftMonth(monthStep()); render(); return }
@@ -3587,9 +3725,11 @@ document.addEventListener('submit', (event) => {
     else store.addGoal(fields)
     toast(id ? 'Goal updated' : 'Goal added')
   } else if (type === 'income') {
+    const items = readItemRows(form)
+    if (items.length) data.set('amount', String(items.reduce((sum, item) => sum + item.amount, 0)))
     const amountInfo = amountFields()
     if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
-    const fields = { name: get('name') || 'Income', ...amountInfo, date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('income') }
+    const fields = { name: get('name') || 'Income', ...amountInfo, items, date: get('date'), time: get('time'), walletId: get('walletId'), sourceId: get('sourceId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('income') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('income', id) : null
@@ -3601,9 +3741,11 @@ document.addEventListener('submit', (event) => {
     else store.addIncome(fields)
     toast(id ? 'Income updated' : (fields.pending ? 'Pending income added' : 'Income added'))
   } else if (type === 'expense') {
+    const items = readItemRows(form)
+    if (items.length) data.set('amount', String(items.reduce((sum, item) => sum + item.amount, 0)))
     const amountInfo = amountFields()
     if (!amountInfo) { form.dataset.saving = '0'; refreshAmountCurrencyHint(form); toast(`Enter a rate for ${get('currency')}`); return }
-    const fields = { name: get('name') || 'Expense', ...amountInfo, date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('expense') }
+    const fields = { name: get('name') || 'Expense', ...amountInfo, items, date: get('date'), time: get('time'), walletId: get('walletId'), categoryId: get('categoryId'), note: get('note'), repeat: get('repeat'), weekDays: data.getAll('weekDay'), monthDay: num('monthDay'), customDays: num('customDays'), ...pendingFields('expense') }
     if (!fields.amount) { toast('Enter an amount'); return }
     if (fields.repeat === 'weekly' && !fields.weekDays.length) {
       const existing = id ? store.findTransaction('expense', id) : null
